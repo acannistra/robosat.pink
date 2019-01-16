@@ -20,13 +20,18 @@ from robosat_pink.transforms import (
     JointRandomFlipOrRotate,
     ImageToTensor,
     MaskToTensor,
+    AsType
 )
-from robosat_pink.datasets import SlippyMapTilesConcatenation
+from robosat_pink.datasets import PairedTiles
 from robosat_pink.metrics import Metrics
 from robosat_pink.config import load_config
 from robosat_pink.logs import Logs
 import robosat_pink.losses
 import robosat_pink.models
+
+from numpy import floor
+from numpy.random import randint
+
 
 
 def add_parser(subparser):
@@ -173,10 +178,12 @@ def train(loader, num_classes, device, net, optimizer, criterion):
 
     net.train()
 
-    for images, masks, tiles in tqdm(loader, desc="Train", unit="batch", ascii=True):
+    print(len(loader))
+    for images, masks in tqdm(loader, desc="Train", unit="batch", ascii=True):
         images = images.to(device)
         masks = masks.to(device)
 
+        print(images.size(), masks.size())
         assert images.size()[2:] == masks.size()[1:], "resolutions for images and masks are in sync"
 
         num_samples += int(images.size(0))
@@ -217,7 +224,7 @@ def validate(loader, num_classes, device, net, criterion):
     net.eval()
 
     with torch.no_grad():
-        for images, masks, tiles in tqdm(loader, desc="Validate", unit="batch", ascii=True):
+        for images, masks in tqdm(loader, desc="Validate", unit="batch", ascii=True):
             images = images.to(device)
             masks = masks.to(device)
 
@@ -245,35 +252,102 @@ def validate(loader, num_classes, device, net, criterion):
     }
 
 
-def get_dataset_loaders(path, config, workers):
+def get_dataset_loaders(dataset_path, config, workers):
 
-    mean, std = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]  # Values computed on ImageNet DataSet
+
+    batch_size = config['model']["batch_size"]
+    train_percent = config['dataset']['train_percent']
+    path = dataset_path
 
     transform = JointCompose(
         [
-            JointResize(config["model"]["tile_size"]),
-            JointRandomFlipOrRotate(config["model"]["data_augmentation"]),
+            #JointRandomFlipOrRotate(config["model"]["data_augmentation"]),
+            JointTransform(AsType(float), AsType(float)),
             JointTransform(ImageToTensor(), MaskToTensor()),
-            JointTransform(Normalize(mean=mean, std=std), None),
+            #JointTransform(Normalize(mean=mean, std=std), None),
         ]
     )
 
-    train_dataset = SlippyMapTilesConcatenation(
-        os.path.join(path, "training"),
-        config["channels"],
-        os.path.join(path, "training", "labels"),
-        joint_transform=transform,
+
+    #
+    # transform = JointCompose(
+    #     [
+    #         JointTransform(AsType(float32), AsType(float32)),
+    #         #JointTransform(Transpose((1,2,0)), Transpose((1,2,0))),
+    #         JointTransform(TensorFromNumpy(), TensorFromNumpy())
+    #         #JointTransform(ImageToTensor(), MaskToTensor())
+    #         # JointTransform(ConvertImageMode("RGB"), ConvertImageMode("P")),
+    #         # JointTransform(Resize(target_size, Image.BILINEAR), Resize(target_size, Image.NEAREST)),
+    #         # JointTransform(CenterCrop(target_size), CenterCrop(target_size)),
+    #         # JointRandomHorizontalFlip(0.5),
+    #         # JointRandomRotation(0.5, 90),
+    #         # JointRandomRotation(0.5, 90),
+    #         # JointRandomRotation(0.5, 90),
+    #         # JointTransform(ImageToTensor(), MaskToTensor()),
+    #         # JointTransform(Normalize(mean=mean, std=std), None),
+    #     ]
+    # )
+
+    data_tiles = PairedTiles(
+        os.path.join(path, "images"),
+        os.path.join(path, "mask"), transform
     )
 
-    val_dataset = SlippyMapTilesConcatenation(
-        os.path.join(path, "validation"),
-        config["channels"],
-        os.path.join(path, "validation", "labels"),
-        joint_transform=transform,
-    )
+    num_images = len(data_tiles)
 
-    batch_size = config["model"]["batch_size"]
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=workers)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=workers)
+    all_indices = set(range(num_images))
+
+    num_train = int(floor(num_images * train_percent))
+
+    train_indices = randint(0, num_images, num_train)
+
+    test_indices = all_indices - set(train_indices)
+
+    train_tiles = PairedTiles(os.path.join(path, "images"),
+                              os.path.join(path, "mask"),
+                              transform, list(train_indices))
+
+    test_tiles = PairedTiles(os.path.join(path, "images"),
+                             os.path.join(path, "mask"),
+                             transform, list(test_indices))
+
+
+    train_loader = DataLoader(train_tiles, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=workers)
+    val_loader = DataLoader(test_tiles, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=workers)
+
 
     return train_loader, val_loader
+
+
+# def get_dataset_loaders(path, config, workers):
+#
+#     mean, std = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]  # Values computed on ImageNet DataSet
+#
+#     transform = JointCompose(
+#         [
+#             JointResize(config["model"]["tile_size"]),
+#             JointRandomFlipOrRotate(config["model"]["data_augmentation"]),
+#             JointTransform(ImageToTensor(), MaskToTensor()),
+#             JointTransform(Normalize(mean=mean, std=std), None),
+#         ]
+#     )
+#
+#     train_dataset = SlippyMapTilesConcatenation(
+#         os.path.join(path, "training"),
+#         config["channels"],
+#         os.path.join(path, "training", "labels"),
+#         joint_transform=transform,
+#     )
+#
+#     val_dataset = SlippyMapTilesConcatenation(
+#         os.path.join(path, "validation"),
+#         config["channels"],
+#         os.path.join(path, "validation", "labels"),
+#         joint_transform=transform,
+#     )
+#
+#     batch_size = config["model"]["batch_size"]
+#     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=workers)
+#     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=workers)
+#
+#     return train_loader, val_loader

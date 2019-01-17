@@ -12,6 +12,8 @@ from PIL import Image
 import torch.utils.data
 import cv2
 import numpy as np
+import rasterio as rio
+from mercantile import Tile
 
 from robosat_pink.tiles import tiles_from_slippy_map, buffer_tile_image
 
@@ -21,27 +23,37 @@ class SlippyMapTiles(torch.utils.data.Dataset):
     """Dataset for images stored in slippy map format.
     """
 
-    def __init__(self, root, mode, transform=None):
+    def __init__(self, root, mode, transform=None, tile_index = False):
         super().__init__()
 
         self.tiles = []
         self.transform = transform
+        self.tile_index = tile_index
 
         self.tiles = [(tile, path) for tile, path in tiles_from_slippy_map(root)]
-        self.tiles.sort(key=lambda tile: tile[0])
+        if tile_index:
+            self.tiles = dict(self.tiles)
+
+        #self.tiles.sort(key=lambda tile: tile[0])
         self.mode = mode
 
     def __len__(self):
         return len(self.tiles)
 
     def __getitem__(self, i):
-        tile, path = self.tiles[i]
+
+        if isinstance(i, Tile):
+            tile = i
+            path = self.tiles[i]
+        else:
+            tile, path = self.tiles[i]
+
 
         if self.mode == "image":
             image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
 
         elif self.mode == "multibands":
-            image = cv2.imread(path, cv2.IMREAD_ANYCOLOR)
+            image = rio.open(path).read()
             if len(image.shape) == 3 and image.shape[2] >= 3:
                 # FIXME Look twice to find an in-place way to perform a multiband BGR2RGB
                 g = image[:, :, 0]
@@ -73,32 +85,25 @@ class SlippyMapTilesConcatenation(torch.utils.data.Dataset):
             for band in channel["bands"]:
                 self.inputs[channel["sub"]] = SlippyMapTiles(os.path.join(path, channel["sub"]), mode="multibands")
 
-        self.target = SlippyMapTiles(target, mode="mask")
+        self.target = SlippyMapTiles(target, mode="mask", tile_index = True)
 
         # No transformations in the `SlippyMapTiles` instead joint transformations in getitem
         self.joint_transform = joint_transform
 
     def __len__(self):
-        return len(self.target)
+        return len(self.inputs[self.channels[0]["sub"]])
 
     def __getitem__(self, i):
 
-        mask, tile = self.target[i]
+        assert len(self.inputs) == 1, "Can only accomondate 1 channel."
 
-        for channel in self.channels:
-            try:
-                data, band_tile = self.inputs[channel["sub"]][i]
-                assert band_tile == tile
+        image, tile = self.inputs[self.channels[0]["sub"]][i]
+        mask, mask_tile = self.target[tile]
 
-                for band in channel["bands"]:
-                    data_band = data[:, :, int(band) - 1] if len(data.shape) == 3 else []
-                    data_band = data_band.reshape(mask.shape[0], mask.shape[1], 1)
-                    tensor = np.concatenate((tensor, data_band), axis=2) if "tensor" in locals() else data_band  # noqa F821
-            except:
-                sys.exit("Unable to concatenate input Tensor")
+
 
         if self.joint_transform is not None:
-            tensor, mask = self.joint_transform(tensor, mask)
+            tensor, mask = self.joint_transform(image, mask)
 
         return tensor, mask, tile
 

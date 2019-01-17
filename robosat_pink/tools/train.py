@@ -251,10 +251,10 @@ def get_dataset_loaders(path, config, workers):
 
     transform = JointCompose(
         [
-            JointResize(config["model"]["tile_size"]),
-            JointRandomFlipOrRotate(config["model"]["data_augmentation"]),
+            # JointResize(config["model"]["tile_size"]),
+            # JointRandomFlipOrRotate(config["model"]["data_augmentation"]),
             JointTransform(ImageToTensor(), MaskToTensor()),
-            JointTransform(Normalize(mean=mean, std=std), None),
+            # JointTransform(Normalize(mean=mean, std=std), None),
         ]
     )
 

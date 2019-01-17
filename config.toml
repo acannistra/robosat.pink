@@ -3,7 +3,7 @@
 
 [dataset]
   # The slippy map dataset's base directory.
-  path = "~/rsp_dataset"
+  path = "/Users/tony/Dropbox/Projects/UW/planet-snowcover/pre_tester/out"
 
 
 # Classes configuration.
@@ -13,7 +13,7 @@
   color = "white"
 
 [[classes]]
-  title = "building"
+  title = "snow"
   color = "deeppink"
 
 
@@ -21,9 +21,9 @@
 # You could so, add several channels blocks to compose your input Tensor. Orders are meaningful.
 [[channels]]
   sub   = "images"
-  bands = [1, 2, 3]
-  mean  = [0.485, 0.456, 0.406]
-  std   = [0.229, 0.224, 0.225]
+  bands = [1, 2, 3, 4]
+  mean  = [0.485, 0.456, 0.406, 1.0]
+  std   = [0.229, 0.224, 0.225, 1.0]
 
 
 [model]
@@ -32,7 +32,7 @@
 
   # Encoder model name.
   encoder = "resnet50"
-  
+
   # Use, or not, ImageNet weights pretraining.
   pretrained = true
 
@@ -40,7 +40,7 @@
   loss = "lovasz"
 
   # Batch size for training.
-  batch_size = 8
+  batch_size = 1
 
   # tile side size in pixels.
   tile_size = 512

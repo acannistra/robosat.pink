@@ -6,6 +6,12 @@ import torch
 import cv2
 import numpy as np
 
+class AsType:
+    def __init__(self, type):
+        self.type = type
+
+    def __call__(self, image):
+        return(image.astype(self.type))
 
 class ImageToTensor:
     """Callable to convert a NumPy H,W,C image into a PyTorch C,W,H tensor.
@@ -21,7 +27,7 @@ class ImageToTensor:
           The converted PyTorch tensor.
         """
 
-        return torch.from_numpy(np.moveaxis(image, 2, 0)).float()
+        return torch.from_numpy(image.astype(float)).float()
 
 
 class MaskToTensor:

@@ -3,7 +3,7 @@
 
 [dataset]
   # The slippy map dataset's base directory.
-  path = "/Users/tony/Dropbox/Projects/UW/planet-snowcover/pre_tester/out"
+  path = "../pre_tester/out"
   train_percent = 0.7
 
 

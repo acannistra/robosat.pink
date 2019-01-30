@@ -98,6 +98,8 @@ def main(args):
 
     palette = make_palette(config["classes"][0]["color"], config["classes"][1]["color"])
 
+    print(len(loader))
+
     # don't track tensors with autograd during prediction
     with torch.no_grad():
         for images, tiles in tqdm(loader, desc="Eval", unit="batch", ascii=True):

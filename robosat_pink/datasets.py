@@ -62,6 +62,8 @@ class PairedTiles(torch.utils.data.Dataset):
         self.images = os.listdir(imagedir)
         self.masks = os.listdir(maskdir)
 
+        print(self.imagedir)
+
         if indices is not None:
             self.images = [self.images[i] for i in indices]
 
@@ -80,11 +82,8 @@ class PairedTiles(torch.utils.data.Dataset):
     def __getitem__(self, i):
         ## 1. grab, open image i
         ## 2. grab, open corresponding mask
-        ## 3. return self.joint_transform(image, mask)
-
         imageFile = self.images[i]
         maskFile = "{}_{}_{}_0.tif".format(*imageFile.split('_')[:3])
-
 
         image = rio.open(os.path.join(self.imagedir, imageFile)).read()
         mask = rio.open(os.path.join(self.maskdir, maskFile)).read()
@@ -95,7 +94,7 @@ class PairedTiles(torch.utils.data.Dataset):
             image = augmented['image']
             mask = augmented['mask']
 
-        return(image, mask)
+        return(image, torch.from_numpy(mask).long())
 
 
 # Single Slippy Map directory structure

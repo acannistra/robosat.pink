@@ -130,6 +130,7 @@ class SlippyMapTiles(torch.utils.data.Dataset):
         if self.transform is not None:
             image = self.transform(image = image)['image']
 
+
         return image, tile
 
 

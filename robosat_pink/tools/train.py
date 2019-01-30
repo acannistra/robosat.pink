@@ -272,9 +272,9 @@ def get_dataset_loaders(dataset_path, config, workers):
     mean, std = [0.485, 0.456, 0.406, 0.406], [0.229, 0.224, 0.225, 0.225]  # Values computed on ImageNet DataSet
     transform = A.Compose([
         A.ToFloat(p = 1),
-        A.RandomRotate90(p = 0.5),
-        A.RandomRotate90(p = 0.5),
-        A.RandomRotate90(p = 0.5),
+        # A.RandomRotate90(p = 0.5),
+        # A.RandomRotate90(p = 0.5),
+        # A.RandomRotate90(p = 0.5), #these do something bad to the bands
         A.HorizontalFlip(p = 0.5),
         A.VerticalFlip(p = 0.5),
     ])

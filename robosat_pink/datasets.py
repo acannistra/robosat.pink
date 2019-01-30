@@ -83,12 +83,15 @@ class PairedTiles(torch.utils.data.Dataset):
         imageFile = self.images[i]
         maskFile = "{}_{}_{}_0.tif".format(*imageFile.split('_')[:3])
 
+
         image = rio.open(os.path.join(self.imagedir, imageFile)).read()
         mask = rio.open(os.path.join(self.maskdir, maskFile)).read()
         mask = np.squeeze(mask)
 
         if self.joint_transform is not None:
-            image, mask = self.joint_transform(image, mask)
+            transformed = joint_transform(image = np.transpose(image, (1, 2, 0)), mask = mask)
+            image = transformed['image']
+            mask = transformed['mask']
 
         return(image, mask)
 

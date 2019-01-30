@@ -87,9 +87,13 @@ def main(args):
     net.eval()
 
     mean, std = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]  # from ImageNet
-    transform = Compose([ImageToTensor(), Normalize(mean=mean, std=std)])
+    #transform = Compose([ImageToTensor(), Normalize(mean=mean, std=std)])
+    transform = A.Compose([
+        A.ToFloat()
+    ])
 
-    directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size, overlap=args.overlap)
+    directory = SlippyMapTiles(args.tiles, mode="multibands")
+    # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size, overlap=args.overlap)
     loader = DataLoader(directory, batch_size=batch_size, num_workers=args.workers)
 
     palette = make_palette(config["classes"][0]["color"], config["classes"][1]["color"])

@@ -75,6 +75,8 @@ class PairedTiles(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.images)
 
+
+
     def __getitem__(self, i):
         ## 1. grab, open image i
         ## 2. grab, open corresponding mask
@@ -88,10 +90,10 @@ class PairedTiles(torch.utils.data.Dataset):
         mask = rio.open(os.path.join(self.maskdir, maskFile)).read()
         mask = np.squeeze(mask)
 
-        if self.joint_transform is not None:
-            transformed = joint_transform(image = np.transpose(image, (1, 2, 0)), mask = mask)
-            image = transformed['image']
-            mask = transformed['mask']
+        if self.joint_transform:
+            augmented = self.joint_transform(image=image, mask=mask)
+            image = augmented['image']
+            mask = augmented['mask']
 
         return(image, mask)
 
@@ -122,17 +124,12 @@ class SlippyMapTiles(torch.utils.data.Dataset):
 
         elif self.mode == "multibands":
             image = rio.open(path).read()
-            if len(image.shape) == 3 and image.shape[2] >= 3:
-                # FIXME Look twice to find an in-place way to perform a multiband BGR2RGB
-                g = image[:, :, 0]
-                image[:, :, 0] = image[:, :, 2]
-                image[:, :, 2] = g
 
         elif self.mode == "mask":
             image = np.array(Image.open(path).convert("P"))
 
         if self.transform is not None:
-            image = self.transform(image)
+            image = self.transform(image = image)['image']
 
         return image, tile
 

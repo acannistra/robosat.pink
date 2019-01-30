@@ -32,6 +32,7 @@ import robosat_pink.models
 from numpy import floor
 from numpy.random import randint
 
+import albumentations as A
 
 
 def add_parser(subparser):
@@ -258,16 +259,22 @@ def get_dataset_loaders(dataset_path, config, workers):
     batch_size = config['model']["batch_size"]
     train_percent = config['dataset']['train_percent']
     path = dataset_path
-
-    transform = JointCompose(
-        [
-            #JointRandomFlipOrRotate(config["model"]["data_augmentation"]),
-            JointTransform(AsType(float), AsType(float)),
-            JointTransform(ImageToTensor(), MaskToTensor()),
-            #JointTransform(Normalize(mean=mean, std=std), None),
-        ]
-    )
-
+    #
+    # transform = JointCompose(
+    #     [
+    #         #JointRandomFlipOrRotate(config["model"]["data_augmentation"]),
+    #         JointTransform(AsType(float), AsType(float)),
+    #         JointTransform(ImageToTensor(), MaskToTensor()),
+    #         #JointTransform(Normalize(mean=mean, std=std), None),
+    #     ]
+    # )
+    #
+    mean, std = [0.485, 0.456, 0.406, 0.406], [0.229, 0.224, 0.225, 0.225]  # Values computed on ImageNet DataSet
+    transform = A.Compose([
+        A.ToFloat(p = 1),
+        A.RandomRotate90(p = 0.5),
+#        A.Normalize(mean = mean, std = std)
+    ])
 
     #
     # transform = JointCompose(

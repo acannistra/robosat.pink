@@ -273,27 +273,12 @@ def get_dataset_loaders(dataset_path, config, workers):
     transform = A.Compose([
         A.ToFloat(p = 1),
         A.RandomRotate90(p = 0.5),
-#        A.Normalize(mean = mean, std = std)
+        A.RandomRotate90(p = 0.5),
+        A.RandomRotate90(p = 0.5),
+        A.HorizontalFlip(p = 0.5),
+        A.VerticalFlip(p = 0.5),
     ])
 
-    #
-    # transform = JointCompose(
-    #     [
-    #         JointTransform(AsType(float32), AsType(float32)),
-    #         #JointTransform(Transpose((1,2,0)), Transpose((1,2,0))),
-    #         JointTransform(TensorFromNumpy(), TensorFromNumpy())
-    #         #JointTransform(ImageToTensor(), MaskToTensor())
-    #         # JointTransform(ConvertImageMode("RGB"), ConvertImageMode("P")),
-    #         # JointTransform(Resize(target_size, Image.BILINEAR), Resize(target_size, Image.NEAREST)),
-    #         # JointTransform(CenterCrop(target_size), CenterCrop(target_size)),
-    #         # JointRandomHorizontalFlip(0.5),
-    #         # JointRandomRotation(0.5, 90),
-    #         # JointRandomRotation(0.5, 90),
-    #         # JointRandomRotation(0.5, 90),
-    #         # JointTransform(ImageToTensor(), MaskToTensor()),
-    #         # JointTransform(Normalize(mean=mean, std=std), None),
-    #     ]
-    # )
 
     data_tiles = PairedTiles(
         os.path.join(path, "images"),

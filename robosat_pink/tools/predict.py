@@ -16,13 +16,14 @@ from tqdm import tqdm
 from PIL import Image
 
 import robosat_pink.models
-from robosat_pink.datasets import BufferedSlippyMapDirectory
+from robosat_pink.datasets import SlippyMapTiles, BufferedSlippyMapDirectory
 from robosat_pink.tiles import tiles_from_slippy_map
 from robosat_pink.config import load_config
 from robosat_pink.colors import make_palette
 from robosat_pink.transforms import ImageToTensor
 from robosat_pink.web_ui import web_ui
 
+import albumentations as A
 
 def add_parser(subparser):
     parser = subparser.add_parser(
@@ -92,13 +93,12 @@ def main(args):
         A.ToFloat()
     ])
 
-    directory = SlippyMapTiles(args.tiles, mode="multibands")
+    directory = SlippyMapTiles(args.tiles, mode="multibands", transform = transform)
     # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size, overlap=args.overlap)
     loader = DataLoader(directory, batch_size=batch_size, num_workers=args.workers)
 
     palette = make_palette(config["classes"][0]["color"], config["classes"][1]["color"])
 
-    print(len(loader))
 
     # don't track tensors with autograd during prediction
     with torch.no_grad():
@@ -109,11 +109,12 @@ def main(args):
             # manually compute segmentation mask class probabilities per pixel
             probs = torch.nn.functional.softmax(outputs, dim=1).data.cpu().numpy()
 
-            for tile, prob in zip(tiles, probs):
+            print(len(tiles), len(probs))
+            for tile, prob in zip([tiles], probs):  
                 x, y, z = list(map(int, tile))
 
                 # we predicted on buffered tiles; now get back probs for original image
-                prob = directory.unbuffer(prob)
+                #prob = directory.unbuffer(prob)
 
                 assert prob.shape[0] == 2, "single channel requires binary model"
                 assert np.allclose(np.sum(prob, axis=0), 1.0), "single channel requires probabilities to sum up to one"

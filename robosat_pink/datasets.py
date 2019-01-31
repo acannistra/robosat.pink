@@ -117,6 +117,7 @@ class SlippyMapTiles(torch.utils.data.Dataset):
 
     def __getitem__(self, i):
         tile, path = self.tiles[i]
+        print(tile, path)
 
         if self.mode == "image":
             image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)

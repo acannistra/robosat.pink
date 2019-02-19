@@ -87,10 +87,23 @@ def main(args):
     net.load_state_dict(chkpt["state_dict"])
     net.eval()
 
-    mean, std = [0.485, 0.456, 0.406, 1.0], [0.229, 0.224, 0.225, 1.0]  # from ImageNet
+    mean = array([[[8237.95084794]],
+
+                   [[6467.98702156]],
+
+                   [[6446.61743148]],
+
+                   [[4520.95360105]]])
+    std  = array([[[7567.03414753]],
+
+                   [[4310.00542703]],
+
+                   [[6210.64289882]],
+
+                   [[4524.92028515]]])
     #transform = Compose([ImageToTensor(), Normalize(mean=mean, std=std)])
     transform = A.Compose([
-        A.Normalize(mean = mean, std = std)
+        A.Normalize(mean = mean, std = std, max_pixel_value = 1.0),
         A.ToFloat()
     ])
 

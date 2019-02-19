@@ -22,6 +22,7 @@ from robosat_pink.transforms import (
     MaskToTensor,
     AsType
 )
+
 from robosat_pink.datasets import PairedTiles
 from robosat_pink.metrics import Metrics
 from robosat_pink.config import load_config
@@ -29,7 +30,7 @@ from robosat_pink.logs import Logs
 import robosat_pink.losses
 import robosat_pink.models
 
-from numpy import floor
+from numpy import floor, array
 from numpy.random import randint
 
 import albumentations as A
@@ -269,13 +270,27 @@ def get_dataset_loaders(dataset_path, config, workers):
     #     ]
     # )
     #
-    mean, std = [0.485, 0.456, 0.406, 0.406], [0.229, 0.224, 0.225, 0.225]  # Values computed on ImageNet DataSet
+    mean = array([[[8237.95084794]],
+
+                   [[6467.98702156]],
+
+                   [[6446.61743148]],
+
+                   [[4520.95360105]]])
+    std  = array([[[7567.03414753]],
+
+                   [[4310.00542703]],
+
+                   [[6210.64289882]],
+
+                   [[4524.92028515]]])
+
     transform = A.Compose([
         A.ToFloat(p = 1),
         # A.RandomRotate90(p = 0.5),
         # A.RandomRotate90(p = 0.5),
         # A.RandomRotate90(p = 0.5), #these do something bad to the bands
-        A.Normalize(mean = mean, std = std),
+        A.Normalize(mean = mean, std = std, max_pixel_value = 1),
         A.HorizontalFlip(p = 0.5),
         A.VerticalFlip(p = 0.5),
     ])

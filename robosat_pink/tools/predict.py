@@ -87,14 +87,14 @@ def main(args):
     net.load_state_dict(chkpt["state_dict"])
     net.eval()
 
-    mean = array([[[8237.95084794]],
+    mean = np.array([[[8237.95084794]],
 
                    [[6467.98702156]],
 
                    [[6446.61743148]],
 
                    [[4520.95360105]]])
-    std  = array([[[7567.03414753]],
+    std  = np.array([[[7567.03414753]],
 
                    [[4310.00542703]],
 

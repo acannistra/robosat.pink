@@ -275,6 +275,7 @@ def get_dataset_loaders(dataset_path, config, workers):
         # A.RandomRotate90(p = 0.5),
         # A.RandomRotate90(p = 0.5),
         # A.RandomRotate90(p = 0.5), #these do something bad to the bands
+        A.Normalize(mean = mean, std = std),
         A.HorizontalFlip(p = 0.5),
         A.VerticalFlip(p = 0.5),
     ])

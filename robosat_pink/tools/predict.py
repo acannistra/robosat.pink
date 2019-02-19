@@ -87,9 +87,10 @@ def main(args):
     net.load_state_dict(chkpt["state_dict"])
     net.eval()
 
-    mean, std = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]  # from ImageNet
+    mean, std = [0.485, 0.456, 0.406, 1.0], [0.229, 0.224, 0.225, 1.0]  # from ImageNet
     #transform = Compose([ImageToTensor(), Normalize(mean=mean, std=std)])
     transform = A.Compose([
+        A.Normalize(mean = mean, std = std)
         A.ToFloat()
     ])
 
@@ -110,7 +111,7 @@ def main(args):
             probs = torch.nn.functional.softmax(outputs, dim=1).data.cpu().numpy()
 
             print(len(tiles), len(probs))
-            for tile, prob in zip([tiles], probs):  
+            for tile, prob in zip([tiles], probs):
                 x, y, z = list(map(int, tile))
 
                 # we predicted on buffered tiles; now get back probs for original image

@@ -182,6 +182,8 @@ def train(loader, num_classes, device, net, optimizer, criterion):
 
     print(len(loader))
     for images, masks in tqdm(loader, desc="Train", unit="batch", ascii=True):
+        print(images)
+
         images = images.to(device)
         masks = masks.to(device)
 
@@ -277,22 +279,24 @@ def get_dataset_loaders(dataset_path, config, workers):
                    [[6446.61743148]],
 
                    [[4520.95360105]]])
-    std  = array([[[7567.03414753]],
 
-                   [[4310.00542703]],
+    std  = array([[[12067.03414753]],
 
-                   [[6210.64289882]],
+                   [[ 8810.00542703]],
 
-                   [[4524.92028515]]])
+                   [[10710.64289882]],
+
+                   [[ 9024.92028515]]])
 
     transform = A.Compose([
-        A.ToFloat(p = 1),
+        #A.ToFloat(p = 1),
         # A.RandomRotate90(p = 0.5),
         # A.RandomRotate90(p = 0.5),
         # A.RandomRotate90(p = 0.5), #these do something bad to the bands
         A.Normalize(mean = mean, std = std, max_pixel_value = 1),
         A.HorizontalFlip(p = 0.5),
         A.VerticalFlip(p = 0.5),
+        A.ToFloat(p = 1)
     ])
 
 

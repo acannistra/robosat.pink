@@ -17,6 +17,9 @@ import cv2
 from PIL import Image
 import numpy as np
 
+import s3fs
+import boto3
+
 import mercantile
 
 
@@ -64,6 +67,52 @@ def fetch_image(session, url, timeout=10):
         return io.BytesIO(resp.content)
     except Exception:
         return None
+
+
+def tiles_from_slippy_map_s3(root, aws_profile = 'default'):
+    """Loads files from a slippy map directory structure in Amazon S3
+
+    Args:
+      root: the base directory with layout `z/x/y.*`. (s3:// prefix)
+
+    Yields:
+      The mercantile tiles and file paths from the slippy map directory.
+    """
+
+    # The Python string functions (.isdigit, .isdecimal, etc.) handle
+    # unicode codepoints; we only care about digits convertible to int
+    def isdigit(v):
+        try:
+            _ = int(v)  # noqa: F841
+            return True
+        except ValueError:
+            return False
+
+
+    fs = s3fs.S3FileSystem(session = boto3.Session(profile_name = aws_profile))
+
+    root = root[5:]
+
+    for z in fs.ls(root):
+        z = os.path.split(z)[1]
+        if not isdigit(z):
+            continue
+
+        for x in fs.ls(os.path.join(root, z)):
+            x = os.path.split(x)[1]
+            if not isdigit(x):
+                continue
+
+            for name in fs.ls(os.path.join(root, z, x)):
+                name = os.path.split(name)[1]
+                y = os.path.splitext(name)[0]
+
+                if not isdigit(y):
+                    continue
+
+                tile = mercantile.Tile(x=int(x), y=int(y), z=int(z))
+                path = os.path.join(root, z, x, name)
+                yield tile, 's3://' + path
 
 
 def tiles_from_slippy_map(root):

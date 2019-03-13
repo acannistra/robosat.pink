@@ -94,13 +94,13 @@ def main(args):
                    [[6446.61743148]],
 
                    [[4520.95360105]]])
-    std  = np.array([[[7567.03414753]],
+    std  = array([[[12067.03414753]],
 
-                   [[4310.00542703]],
+                   [[ 8810.00542703]],
 
-                   [[6210.64289882]],
+                   [[10710.64289882]],
 
-                   [[4524.92028515]]])
+                   [[ 9024.92028515]]])
     #transform = Compose([ImageToTensor(), Normalize(mean=mean, std=std)])
     transform = A.Compose([
         A.Normalize(mean = mean, std = std, max_pixel_value = 1.0),

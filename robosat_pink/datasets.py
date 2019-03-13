@@ -13,7 +13,7 @@ import torch.utils.data
 import cv2
 import numpy as np
 
-from robosat_pink.tiles import tiles_from_slippy_map, buffer_tile_image
+from robosat_pink.tiles import tiles_from_slippy_map, buffer_tile_image, tiles_from_slippy_map_s3
 """
 datasets.py
 
@@ -32,6 +32,10 @@ import rasterio as rio
 import os
 
 import numpy as np
+
+import s3fs
+import boto3
+
 
 
 class PairedTiles(torch.utils.data.Dataset):
@@ -98,6 +102,44 @@ class PairedTiles(torch.utils.data.Dataset):
 
 
 # Single Slippy Map directory structure
+class S3SlippyMapTiles(torch.utils.data.Dataset):
+    """Dataset for images stored in slippy map format on AWS S3
+    """
+
+    def __init__(self, root, mode, transform=None, aws_profile = 'default'):
+        super().__init__()
+
+        self.tiles = []
+        self.transform = transform
+
+        self.tiles = [(tile, path) for tile, path in tiles_from_slippy_map_s3(root, aws_profile)]
+        self.tiles.sort(key=lambda tile: tile[0])
+        self.mode = mode
+
+    def __len__(self):
+        return len(self.tiles)
+
+    def __getitem__(self, i):
+        tile, path = self.tiles[i]
+        print(tile, path)
+
+        if self.mode == "image":
+            image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+
+        elif self.mode == "multibands":
+            image = rio.open(path)
+
+        elif self.mode == "mask":
+            image = np.array(Image.open(path).convert("P"))
+
+        if self.transform is not None:
+            image = self.transform(image = image)['image']
+
+
+        return tile, image
+
+
+# Single Slippy Map directory structure
 class SlippyMapTiles(torch.utils.data.Dataset):
     """Dataset for images stored in slippy map format.
     """
@@ -132,7 +174,7 @@ class SlippyMapTiles(torch.utils.data.Dataset):
             image = self.transform(image = image)['image']
 
 
-        return image, tile
+        return tile, image
 
 
 # Multiple Slippy Map directories.
@@ -140,18 +182,38 @@ class SlippyMapTilesConcatenation(torch.utils.data.Dataset):
     """Dataset to concate multiple input images stored in slippy map format.
     """
 
-    def __init__(self, path, channels, target, joint_transform=None):
+    def __init__(self, path, target, joint_transform=None, aws_profile = None):
         super().__init__()
 
-        assert len(channels), "Channels configuration empty"
-        self.channels = channels
-        self.inputs = dict()
+        self._data_on_s3 = False
+        if (path.startswith("s3://") and target.startswith("s3://")):
+            self._data_on_s3 = True
 
-        for channel in channels:
-            for band in channel["bands"]:
-                self.inputs[channel["sub"]] = SlippyMapTiles(os.path.join(path, channel["sub"]), mode="multibands")
+            self.inputs = tiles_from_slippy_map_s3(path,
+                                                   aws_profile = aws_profile)
 
-        self.target = SlippyMapTiles(target, mode="mask")
+            self.target = tiles_from_slippy_map_s3(target,
+                                                   aws_profile = aws_profile)
+
+        else:
+
+            self.inputs = SlippyMapTiles(path, mode='multibands')
+
+            self.target = SlippyMapTiles(target, mode="multibands")
+
+
+
+
+        self.inputs = dict(self.inputs)
+        self.target = dict(self.target)
+
+        data_tiles = self.inputs.keys()
+        mask_tiles = self.target.keys()
+
+        self.tiles = list(set(data_tiles).intersection(set(mask_tiles)))
+
+        self.inputs = {tile : path for tile, path in self.inputs.items() if tile in self.tiles}
+        self.target = {tile : path for tile, path in self.target.items() if tile in self.tiles}
 
         # No transformations in the `SlippyMapTiles` instead joint transformations in getitem
         self.joint_transform = joint_transform
@@ -161,24 +223,35 @@ class SlippyMapTilesConcatenation(torch.utils.data.Dataset):
 
     def __getitem__(self, i):
 
-        mask, tile = self.target[i]
+        tile = self.tiles[i]
 
-        for channel in self.channels:
-            try:
-                data, band_tile = self.inputs[channel["sub"]][i]
-                assert band_tile == tile
+        if(self._data_on_s3):
+            # open and read files at __getitem__
+            mask = rio.open(self.target[tile]).read()
+            data = rio.open(self.inputs[tile]).read()
+        else:
+            # open and read files already happened.
+            mask = self.target[tile]
+            data = self.inputs[tile]
 
-                for band in channel["bands"]:
-                    data_band = data[:, :, int(band) - 1] if len(data.shape) == 3 else []
-                    data_band = data_band.reshape(mask.shape[0], mask.shape[1], 1)
-                    tensor = np.concatenate((tensor, data_band), axis=2) if "tensor" in locals() else data_band  # noqa F821
-            except:
-                sys.exit("Unable to concatenate input Tensor")
+
+
+        # for channel in self.channels:
+        #     try:
+        #         data, band_tile = self.inputs[channel["sub"]][i]
+        #         assert band_tile == tile
+        #
+        #         for band in channel["bands"]:
+        #             data_band = data[:, :, int(band) - 1] if len(data.shape) == 3 else []
+        #             data_band = data_band.reshape(mask.shape[0], mask.shape[1], 1)
+        #             tensor = np.concatenate((tensor, data_band), axis=2) if "tensor" in locals() else data_band  # noqa F821
+        #     except:
+        #         sys.exit("Unable to concatenate input Tensor")
 
         if self.joint_transform is not None:
-            tensor, mask = self.joint_transform(tensor, mask)
+            data, mask = self.joint_transform(data, mask)
 
-        return tensor, mask, tile
+        return data, mask, tile
 
 
 # Todo: once we have the SlippyMapDataset this dataset should wrap

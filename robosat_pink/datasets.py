@@ -182,7 +182,7 @@ class SlippyMapTilesConcatenation(torch.utils.data.Dataset):
     """Dataset to concate multiple input images stored in slippy map format.
     """
 
-    def __init__(self, path, target, joint_transform=None, aws_profile = None):
+    def __init__(self, path, target, tiles = None, joint_transform=None, aws_profile = None):
         super().__init__()
 
         self._data_on_s3 = False
@@ -211,6 +211,13 @@ class SlippyMapTilesConcatenation(torch.utils.data.Dataset):
         mask_tiles = self.target.keys()
 
         self.tiles = list(set(data_tiles).intersection(set(mask_tiles)))
+        
+        if (tiles is not None):
+            # only use those tiles specified in `tiles` argument
+            self.tiles = [t for t in self.tiles if t in tiles]
+            print(len(self.tiles))
+
+
 
         self.inputs = {tile : path for tile, path in self.inputs.items() if tile in self.tiles}
         self.target = {tile : path for tile, path in self.target.items() if tile in self.tiles}
@@ -219,7 +226,7 @@ class SlippyMapTilesConcatenation(torch.utils.data.Dataset):
         self.joint_transform = joint_transform
 
     def __len__(self):
-        return len(self.target)
+        return len(self.tiles)
 
     def __getitem__(self, i):
 
@@ -249,9 +256,11 @@ class SlippyMapTilesConcatenation(torch.utils.data.Dataset):
         #         sys.exit("Unable to concatenate input Tensor")
 
         if self.joint_transform is not None:
-            data, mask = self.joint_transform(data, mask)
+            transformed = self.joint_transform(image = data, mask = mask)
+            data = transformed['image']
+            mask = transformed['mask']
 
-        return data, mask, tile
+        return torch.FloatTensor(data), mask.squeeze(), tile
 
 
 # Todo: once we have the SlippyMapDataset this dataset should wrap

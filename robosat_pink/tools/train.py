@@ -8,6 +8,10 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.transforms import Normalize
 
+import s3fs
+import boto3
+import io
+
 from tqdm import tqdm
 
 import pkgutil
@@ -43,23 +47,16 @@ def add_parser(subparser):
 
     parser.add_argument("--config", type=str, required=True, help="path to configuration file")
     parser.add_argument("--checkpoint", type=str, required=False, help="path to a model checkpoint (to retrain)")
-    parser.add_argument("--resume", action="store_true", help="resume training (imply to provide a checkpoint)")
-    parser.add_argument("--workers", type=int, default=0, help="number of workers pre-processing images")
-    parser.add_argument("--dataset", type=str, help="if set, override dataset path value from config file")
-    parser.add_argument("--epochs", type=int, help="if set, override epochs value from config file")
-    parser.add_argument("--batch_size", type=int, help="if set, override batch_size value from config file")
-    parser.add_argument("--lr", type=float, help="if set, override learning rate value from config file")
-    parser.add_argument("out", type=str, help="directory to save checkpoint .pth files and log")
+    parser.add_argument("--workers", type=int, required=False, default=1)
+
+    parser.add_argument("out", type=str)
 
     parser.set_defaults(func=main)
 
 
 def main(args):
     config = load_config(args.config)
-    config["dataset"]["path"] = args.dataset if args.dataset else config["dataset"]["path"]
-    config["model"]["lr"] = args.lr if args.lr else config["model"]["lr"]
-    config["model"]["epochs"] = args.epochs if args.epochs else config["model"]["epochs"]
-    config["model"]["batch_size"] = args.batch_size if args.batch_size else config["model"]["batch_size"]
+    print(config)
 
     log = Logs(os.path.join(args.out, "log"))
 
@@ -92,19 +89,38 @@ def main(args):
     optimizer = Adam(net.parameters(), lr=config["model"]["lr"], weight_decay=config["model"]["decay"])
 
     resume = 0
+    S3_CHECKPOINT = False
     if args.checkpoint:
+
+        if args.checkpoint.startswith("s3://"):
+            S3_CHECKPOINT = True
+            # load from s3
+            args.checkpoint = args.checkpoint[5:]
+            sess = boto3.Session(profile_name=os.environ['AWS_DEFAULT_PROFILE'])
+            fs = s3fs.S3FileSystem(session=sess)
+            s3ckpt = s3fs.S3File(fs, args.checkpoint, 'rb')
 
         def map_location(storage, _):
             return storage.cuda() if torch.cuda.is_available() else storage.cpu()
 
-        # https://github.com/pytorch/pytorch/issues/7178
-        chkpt = torch.load(args.checkpoint, map_location=map_location)
-        net.load_state_dict(chkpt["state_dict"])
+    if args.checkpoint is not None:
+        def map_location(storage, _):
+            return storage.cuda() if torch.cuda.is_available() else storage.cpu()
+        try:
+            if S3_CHECKPOINT:
+                with s3fs.S3File(fs, args.checkpoint, 'rb') as C:
+                    state = torch.load(io.BytesIO(C.read()),
+                                       map_location = map_location)
+            else:
+                state = torch.load(args.checkpoint)
+            optimizer.load_state_dict(state['optimizer'])
+            net.load_state_dict(state['state_dict'])
+            net.to(device)
+        except FileNotFoundError as f:
+            print("{} checkpoint not found.".format(CHECKPOINT))
+
         log.log("Using checkpoint: {}".format(args.checkpoint))
 
-        if args.resume:
-            optimizer.load_state_dict(chkpt["optimizer"])
-            resume = chkpt["epoch"]
 
     losses = [name for _, name, _ in pkgutil.iter_modules([os.path.dirname(robosat_pink.losses.__file__)])]
     if config["model"]["loss"] not in [loss for loss in losses]:

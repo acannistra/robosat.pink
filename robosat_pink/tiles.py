@@ -13,6 +13,8 @@ import io
 import os
 from glob import glob
 
+from hashlib import md5
+
 import cv2
 from PIL import Image
 import numpy as np
@@ -112,7 +114,12 @@ def tiles_from_slippy_map_s3(root, aws_profile = 'default'):
 
                 tile = mercantile.Tile(x=int(x), y=int(y), z=int(z))
                 path = os.path.join(root, z, x, name)
-                yield tile, 's3://' + path
+
+                id = "{}-{}-{}-{}".format(md5(root.encode('utf8')).hexdigest(),
+                                          tile.x,
+                                          tile.y,
+                                          tile.z)
+                yield id, tile, 's3://' + path
 
 
 def tiles_from_slippy_map(root):

@@ -28,6 +28,9 @@ from mercantile import Tile
 from copy import deepcopy
 
 import rasterio as rio
+from rasterio.session import AWSSession
+
+from itertools import chain
 
 import os
 
@@ -35,6 +38,8 @@ import numpy as np
 
 import s3fs
 import boto3
+
+import pandas as pd
 
 
 
@@ -139,6 +144,8 @@ class S3SlippyMapTiles(torch.utils.data.Dataset):
         return tile, image
 
 
+
+
 # Single Slippy Map directory structure
 class SlippyMapTiles(torch.utils.data.Dataset):
     """Dataset for images stored in slippy map format.
@@ -177,7 +184,58 @@ class SlippyMapTiles(torch.utils.data.Dataset):
         return tile, image
 
 
-# Multiple Slippy Map directories.
+class MultiSlippyMapTilesConcatenation(torch.utils.data.Dataset):
+    """
+        supports multiple image and mask slippy mask directories.
+
+        ensures that each image tile is matched with a mask tile.
+
+        unique source directory identifiers are used to support tile overlap (e.g. if SourceDir1 has tile 200/15/6 and SourceDir2 has tile 200/15/6, both are preserved, one of the MaskSourceDirs contains 200/15/6 )
+    """
+
+    def __init__(self, imageSources, maskSources, joint_transform = None, aws_profile = None):
+        super().__init__()
+
+        self.aws_profile = aws_profile
+        self.joint_transform = joint_transform
+
+        datacols = ['id', 'tile', 'path']
+
+        self.imagery = list(chain.from_iterable([tiles_from_slippy_map_s3(src, aws_profile = aws_profile) for src in imageSources]))
+
+        self.masks = list(chain.from_iterable([tiles_from_slippy_map_s3(src, aws_profile = aws_profile) for src in maskSources]))
+
+
+        self.imagery = pd.DataFrame(self.imagery, columns = datacols)
+        self.masks = pd.DataFrame(self.masks, columns = datacols)
+
+        ## match masks with imagery
+        self.overlap = self.imagery.set_index('tile').join(self.masks.set_index('tile'),
+         how = 'inner', rsuffix = '_mask')
+
+    def __len__(self):
+        return(len(self.overlap))
+
+    def __getitem__(self, i):
+
+        match = self.overlap.iloc[i]
+
+        s = boto3.Session(profile_name = self.aws_profile)
+
+        with rio.Env(AWSSession(s)):
+            mask = rio.open(match.path_mask).read()
+            data = rio.open(match.path).read()
+
+
+        if self.joint_transform is not None:
+            data, mask = self.joint_transform(data, mask)
+
+        return data, mask, match.name
+
+
+
+
+# Paired Image and Mask slippy map directories.
 class SlippyMapTilesConcatenation(torch.utils.data.Dataset):
     """Dataset to concate multiple input images stored in slippy map format.
     """

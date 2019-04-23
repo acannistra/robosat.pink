@@ -190,20 +190,18 @@ def main(args):
 
 def train(loader, num_classes, device, net, optimizer, criterion):
     num_samples = 0
-    running_loss = 0
+    running_loss= 0
 
     metrics = Metrics()
 
     net.train()
 
-    print(len(loader))
-    for images, masks in tqdm(loader, desc="Train", unit="batch", ascii=True):
+    for images, masks, _tile in tqdm(loader, desc="Train", unit="batch", ascii=True):
         print(images)
 
         images = images.to(device)
         masks = masks.to(device)
 
-        print(images.size(), masks.size())
         assert images.size()[2:] == masks.size()[1:], "resolutions for images and masks are in sync"
 
         num_samples += int(images.size(0))
@@ -244,7 +242,7 @@ def validate(loader, num_classes, device, net, criterion):
     net.eval()
 
     with torch.no_grad():
-        for images, masks in tqdm(loader, desc="Validate", unit="batch", ascii=True):
+        for images, masks, _tile in tqdm(loader, desc="Validate", unit="batch", ascii=True):
             images = images.to(device)
             masks = masks.to(device)
 

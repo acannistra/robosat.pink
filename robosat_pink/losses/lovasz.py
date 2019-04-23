@@ -11,7 +11,9 @@ class Lovasz(nn.Module):
     def forward(self, inputs, targets):
 
         N, C, H, W = inputs.size()
-        masks = torch.zeros(N, C, H, W).to(targets.device).scatter_(1, targets.view(N, 1, H, W), 1)
+        print(inputs.size(), inputs.dtype)
+        #masks = torch.zeros(N, C, H, W).to(targets.device).scatter_(1, targets.view(N, 1, H, W), 1)
+        masks = targets
 
         loss = 0.0
 

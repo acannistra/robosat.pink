@@ -200,7 +200,6 @@ def train(loader, num_classes, device, net, optimizer, criterion):
     net.train()
 
     for images, masks, _tile in tqdm(loader, desc="Train", unit="batch", ascii=True):
-        print(images)
 
         images = images.to(device)
         masks = masks.to(device)

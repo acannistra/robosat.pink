@@ -246,7 +246,7 @@ class MultiSlippyMapTilesConcatenation(torch.utils.data.Dataset):
             data = augmented['image']
             mask = augmented['mask']
 
-        return(data, torch.from_numpy(mask).long(), match.name)
+        return(torch.FloatTensor(data), torch.from_numpy(mask).long(), match.name)
 
 
 

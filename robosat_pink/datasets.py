@@ -13,6 +13,7 @@ import torch.utils.data
 import cv2
 import numpy as np
 
+
 from robosat_pink.tiles import tiles_from_slippy_map, buffer_tile_image, tiles_from_slippy_map_s3
 """
 datasets.py
@@ -236,14 +237,17 @@ class MultiSlippyMapTilesConcatenation(torch.utils.data.Dataset):
         s = boto3.Session(profile_name = self.aws_profile)
 
         with rio.Env(AWSSession(s)):
-            mask = rio.open(match.path_mask).read()
+            mask = np.squeeze(rio.open(match.path_mask).read())
             data = rio.open(match.path).read()
 
 
-        if self.joint_transform is not None:
-            data, mask = self.joint_transform(data, mask)
+        if self.joint_transform:
+            augmented = self.joint_transform(image=data, mask=mask)
+            data = augmented['image']
+            mask = augmented['mask']
 
-        return data, mask, match.name
+        return(data, torch.from_numpy(mask).long())
+
 
 
 

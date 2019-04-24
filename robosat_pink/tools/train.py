@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 import pprint
+os.environ['CURL_CA_BUNDLE']='/etc/ssl/certs/ca-certificates.crt'
 
 import torch
 import torch.backends.cudnn

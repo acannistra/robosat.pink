@@ -280,7 +280,7 @@ def get_dataset_loaders(config, workers):
 
     imagery_searchpath = config['dataset']['image_bucket']  + '/' +  config['dataset']['imagery_directory_regex']
     print("Searching for imagery...({})".format(imagery_searchpath))
-    imagery_candidates = fs.ls(config['dataset']['image_bucket'])
+    imagery_candidates = fs.walk(config['dataset']['image_bucket'])
     print("candidates:")
     p.pprint(imagery_candidates)
     imagery_locs = [c for c in imagery_candidates if match(imagery_searchpath, c)]
@@ -289,7 +289,7 @@ def get_dataset_loaders(config, workers):
 
     mask_searchpath = config['dataset']['mask_bucket'] + '/' +  config['dataset']['mask_directory_regex']
     print("Searching for mask...({})".format(mask_searchpath))
-    mask_candidates = fs.ls(config['dataset']['mask_bucket'])
+    mask_candidates = fs.walk(config['dataset']['mask_bucket'])
     print("candidates:")
     p.pprint(mask_candidates)
     mask_locs = [c for c in mask_candidates if match(mask_searchpath, c)]

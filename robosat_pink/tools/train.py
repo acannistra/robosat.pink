@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+import pprint
 
 import torch
 import torch.backends.cudnn
@@ -11,6 +12,7 @@ from torchvision.transforms import Normalize
 import s3fs
 import boto3
 import io
+from re import match
 
 from tqdm import tqdm
 
@@ -27,12 +29,15 @@ from robosat_pink.transforms import (
     AsType
 )
 
-from robosat_pink.datasets import PairedTiles
+from robosat_pink.datasets import MultiSlippyMapTilesConcatenation
 from robosat_pink.metrics import Metrics
 from robosat_pink.config import load_config
 from robosat_pink.logs import Logs
 import robosat_pink.losses
 import robosat_pink.models
+
+from sklearn.model_selection import train_test_split
+
 
 from numpy import floor, array
 from numpy.random import randint
@@ -96,7 +101,7 @@ def main(args):
             S3_CHECKPOINT = True
             # load from s3
             args.checkpoint = args.checkpoint[5:]
-            sess = boto3.Session(profile_name=os.environ['AWS_DEFAULT_PROFILE'])
+            sess = boto3.Session(profile_name=config['dataset']['aws_profile'])
             fs = s3fs.S3FileSystem(session=sess)
             s3ckpt = s3fs.S3File(fs, args.checkpoint, 'rb')
 
@@ -129,7 +134,7 @@ def main(args):
     loss_module = import_module("robosat_pink.losses.{}".format(config["model"]["loss"]))
     criterion = getattr(loss_module, "{}".format(config["model"]["loss"].title()))().to(device)
 
-    train_loader, val_loader = get_dataset_loaders(config["dataset"]["path"], config, args.workers)
+    train_loader, val_loader = get_dataset_loaders(config, args.workers)
 
     if resume >= config["model"]["epochs"]:
         sys.exit(
@@ -139,12 +144,9 @@ def main(args):
         )
 
     log.log("")
-    log.log("--- Input tensor from Dataset: {} ---".format(config["dataset"]["path"]))
-    num_channel = 1
-    for channel in config["channels"]:
-        for band in channel["bands"]:
-            log.log("Channel {}:\t\t {}[band: {}]".format(num_channel, channel["sub"], band))
-            num_channel += 1
+    log.log("--- Input tensor from Dataset: {} ---".format(config["dataset"]["image_bucket"] + '/' +
+             config['dataset']['imagery_directory_regex']))
+
     log.log("")
     log.log("--- Hyper Parameters ---")
     log.log("Model:\t\t\t {}".format(config["model"]["name"]))
@@ -270,110 +272,68 @@ def validate(loader, num_classes, device, net, criterion):
     }
 
 
-def get_dataset_loaders(dataset_path, config, workers):
+def get_dataset_loaders(config, workers):
+
+    p = pprint.PrettyPrinter()
+
+    fs = s3fs.S3FileSystem(session = boto3.Session(profile_name = config['dataset']['aws_profile']))
 
 
-    batch_size = config['model']["batch_size"]
-    train_percent = config['dataset']['train_percent']
-    path = dataset_path
-    #
-    # transform = JointCompose(
-    #     [
-    #         #JointRandomFlipOrRotate(config["model"]["data_augmentation"]),
-    #         JointTransform(AsType(float), AsType(float)),
-    #         JointTransform(ImageToTensor(), MaskToTensor()),
-    #         #JointTransform(Normalize(mean=mean, std=std), None),
-    #     ]
-    # )
-    #
-    mean = array([[[8237.95084794]],
+    imagery_searchpath = config['dataset']['image_bucket']  + '/' +  config['dataset']['imagery_directory_regex']
+    print("Searching for imagery...({})".format(imagery_searchpath))
+    imagery_candidates = fs.ls(config['dataset']['image_bucket'])
+    print("candidates:")
+    p.pprint(imagery_candidates)
+    imagery_locs = [c for c in imagery_candidates if match(imagery_searchpath, c)]
+    print("result:")
+    p.pprint(imagery_locs)
 
-                   [[6467.98702156]],
+    mask_searchpath = config['dataset']['mask_bucket'] + '/' +  config['dataset']['mask_directory_regex']
+    print("Searching for mask...({})".format(mask_searchpath))
+    mask_candidates = fs.ls(config['dataset']['mask_bucket'])
+    print("candidates:")
+    p.pprint(mask_candidates)
+    mask_locs = [c for c in mask_candidates if match(mask_searchpath, c)]
+    print("result:")
+    p.pprint(mask_locs)
 
-                   [[6446.61743148]],
+    assert(len(mask_locs) > 0 and len(imagery_locs) > 0)
 
-                   [[4520.95360105]]])
+    print("Merging tilesets...")
 
-    std  = array([[[12067.03414753]],
+    allTiles = MultiSlippyMapTilesConcatenation(imagery_locs, mask_locs, aws_profile = config['dataset']['aws_profile'])
+    print(len(allTiles))
 
-                   [[ 8810.00542703]],
-
-                   [[10710.64289882]],
-
-                   [[ 9024.92028515]]])
+    train_ids, test_ids  = train_test_split(allTiles.image_ids, train_size = config['dataset']['train_percent'])
 
     transform = A.Compose([
         #A.ToFloat(p = 1),
         # A.RandomRotate90(p = 0.5),
-        # A.RandomRotate90(p = 0.5),
-        # A.RandomRotate90(p = 0.5), #these do something bad to the bands
-        A.Normalize(mean = mean, std = std, max_pixel_value = 1),
+        #A.RandomRotate90(p = 0.5),
+        #A.RandomRotate90(p = 0.5), #these do something bad to the bands
+    #    A.Normalize(mean = mean, std = std, max_pixel_value = 1),
         A.HorizontalFlip(p = 0.5),
         A.VerticalFlip(p = 0.5),
-        A.ToFloat(p = 1)
+    #    A.ToFloat(p = 1, max_value = np.finfo(np.float64).max)
     ])
 
 
-    data_tiles = PairedTiles(
-        os.path.join(path, "images"),
-        os.path.join(path, "mask"), transform
-    )
+    train_tileset = MultiSlippyMapTilesConcatenation(imagery_locs, mask_locs, aws_profile = config['dataset']['aws_profile'], image_ids = train_ids, joint_transform = transform)
 
-    num_images = len(data_tiles)
-
-    all_indices = set(range(num_images))
-
-    num_train = int(floor(num_images * train_percent))
-
-    train_indices = randint(0, num_images, num_train)
-
-    test_indices = all_indices - set(train_indices)
-
-    train_tiles = PairedTiles(os.path.join(path, "images"),
-                              os.path.join(path, "mask"),
-                              transform, list(train_indices))
-
-    test_tiles = PairedTiles(os.path.join(path, "images"),
-                             os.path.join(path, "mask"),
-                             transform, list(test_indices))
+    test_tileset =MultiSlippyMapTilesConcatenation(imagery_locs, mask_locs, aws_profile = config['dataset']['aws_profile'], image_ids = test_ids, joint_transform = transform)
 
 
-    train_loader = DataLoader(train_tiles, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=workers)
-    val_loader = DataLoader(test_tiles, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=workers)
+    train_loader = DataLoader(train_tileset,
+                              batch_size = config['model']['batch_size'],
+                              shuffle = True,
+                              drop_last = True,
+                              num_workers = workers)
 
 
-    return train_loader, val_loader
+    test_loader = DataLoader(test_tileset,
+                             batch_size = config['model']['batch_size'],
+                             shuffle = True,
+                             drop_last = True,
+                             num_workers = workers)
 
-
-# def get_dataset_loaders(path, config, workers):
-#
-#     mean, std = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]  # Values computed on ImageNet DataSet
-#
-#     transform = JointCompose(
-#         [
-#             JointResize(config["model"]["tile_size"]),
-#             JointRandomFlipOrRotate(config["model"]["data_augmentation"]),
-#             JointTransform(ImageToTensor(), MaskToTensor()),
-#             JointTransform(Normalize(mean=mean, std=std), None),
-#         ]
-#     )
-#
-#     train_dataset = SlippyMapTilesConcatenation(
-#         os.path.join(path, "training"),
-#         config["channels"],
-#         os.path.join(path, "training", "labels"),
-#         joint_transform=transform,
-#     )
-#
-#     val_dataset = SlippyMapTilesConcatenation(
-#         os.path.join(path, "validation"),
-#         config["channels"],
-#         os.path.join(path, "validation", "labels"),
-#         joint_transform=transform,
-#     )
-#
-#     batch_size = config["model"]["batch_size"]
-#     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=workers)
-#     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=workers)
-#
-#     return train_loader, val_loader
+    return (train_loader, test_loader)

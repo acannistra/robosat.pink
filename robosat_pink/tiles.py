@@ -71,7 +71,7 @@ def fetch_image(session, url, timeout=10):
         return None
 
 
-def tiles_from_slippy_map_s3(root, aws_profile = 'default'):
+def tiles_from_slippy_map_s3(root, aws_profile = 'default', trim_protocol = True):
     """Loads files from a slippy map directory structure in Amazon S3
 
     Args:
@@ -93,7 +93,8 @@ def tiles_from_slippy_map_s3(root, aws_profile = 'default'):
 
     fs = s3fs.S3FileSystem(session = boto3.Session(profile_name = aws_profile))
 
-    root = root[5:]
+    if trim_protocol:
+        root = root[5:]
 
     for z in fs.ls(root):
         z = os.path.split(z)[1]

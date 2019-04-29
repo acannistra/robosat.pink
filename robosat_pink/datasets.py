@@ -12,6 +12,8 @@ from PIL import Image
 import torch.utils.data
 import cv2
 import numpy as np
+import rasterio as rio
+from mercantile import Tile
 
 
 from robosat_pink.tiles import tiles_from_slippy_map, buffer_tile_image, tiles_from_slippy_map_s3
@@ -152,20 +154,25 @@ class SlippyMapTiles(torch.utils.data.Dataset):
     """Dataset for images stored in slippy map format.
     """
 
-    def __init__(self, root, mode, transform=None):
+    def __init__(self, root, mode, transform=None, tile_index = False):
         super().__init__()
 
         self.tiles = []
         self.transform = transform
+        self.tile_index = tile_index
 
         self.tiles = [(tile, path) for tile, path in tiles_from_slippy_map(root)]
-        self.tiles.sort(key=lambda tile: tile[0])
+        if tile_index:
+            self.tiles = dict(self.tiles)
+
+        #self.tiles.sort(key=lambda tile: tile[0])
         self.mode = mode
 
     def __len__(self):
         return len(self.tiles)
 
     def __getitem__(self, i):
+
         tile, path = self.tiles[i]
         print(tile, path)
 
@@ -334,6 +341,7 @@ class SlippyMapTilesConcatenation(torch.utils.data.Dataset):
             transformed = self.joint_transform(image = data, mask = mask)
             data = transformed['image']
             mask = transformed['mask']
+
 
         return torch.FloatTensor(data), mask.squeeze(), tile
 

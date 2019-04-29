@@ -16,6 +16,8 @@ import numpy as np
 
 class AsType():
     """ convert image type"""
+
+
     def __init__(self, type):
         self.type = type
 
@@ -201,6 +203,7 @@ class JointResize:
             mask = cv2.resize(mask, self.hw, interpolation=cv2.INTER_NEAREST)
 
         return image, mask
+
 
 
 class ImageToTensor:

@@ -277,7 +277,6 @@ def get_dataset_loaders(config, workers):
 
     fs = s3fs.S3FileSystem(session = boto3.Session(profile_name = config['dataset']['aws_profile']))
 
-
     imagery_searchpath = config['dataset']['image_bucket']  + '/' +  config['dataset']['imagery_directory_regex']
     print("Searching for imagery...({})".format(imagery_searchpath))
     imagery_candidates = fs.ls(config['dataset']['image_bucket'])

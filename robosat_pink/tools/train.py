@@ -1,12 +1,19 @@
 import os
 import sys
 import argparse
+import pprint
+os.environ['CURL_CA_BUNDLE']='/etc/ssl/certs/ca-certificates.crt'
 
 import torch
 import torch.backends.cudnn
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.transforms import Normalize
+
+import s3fs
+import boto3
+import io
+from re import match
 
 from tqdm import tqdm
 
@@ -20,13 +27,23 @@ from robosat_pink.transforms import (
     JointRandomFlipOrRotate,
     ImageToTensor,
     MaskToTensor,
+    AsType
 )
-from robosat_pink.datasets import SlippyMapTilesConcatenation
+
+from robosat_pink.datasets import MultiSlippyMapTilesConcatenation
 from robosat_pink.metrics import Metrics
 from robosat_pink.config import load_config
 from robosat_pink.logs import Logs
 import robosat_pink.losses
 import robosat_pink.models
+
+from sklearn.model_selection import train_test_split
+
+
+from numpy import floor, array
+from numpy.random import randint
+
+import albumentations as A
 
 
 def add_parser(subparser):
@@ -36,23 +53,16 @@ def add_parser(subparser):
 
     parser.add_argument("--config", type=str, required=True, help="path to configuration file")
     parser.add_argument("--checkpoint", type=str, required=False, help="path to a model checkpoint (to retrain)")
-    parser.add_argument("--resume", action="store_true", help="resume training (imply to provide a checkpoint)")
-    parser.add_argument("--workers", type=int, default=0, help="number of workers pre-processing images")
-    parser.add_argument("--dataset", type=str, help="if set, override dataset path value from config file")
-    parser.add_argument("--epochs", type=int, help="if set, override epochs value from config file")
-    parser.add_argument("--batch_size", type=int, help="if set, override batch_size value from config file")
-    parser.add_argument("--lr", type=float, help="if set, override learning rate value from config file")
-    parser.add_argument("out", type=str, help="directory to save checkpoint .pth files and log")
+    parser.add_argument("--workers", type=int, required=False, default=1)
+
+    parser.add_argument("out", type=str)
 
     parser.set_defaults(func=main)
 
 
 def main(args):
     config = load_config(args.config)
-    config["dataset"]["path"] = args.dataset if args.dataset else config["dataset"]["path"]
-    config["model"]["lr"] = args.lr if args.lr else config["model"]["lr"]
-    config["model"]["epochs"] = args.epochs if args.epochs else config["model"]["epochs"]
-    config["model"]["batch_size"] = args.batch_size if args.batch_size else config["model"]["batch_size"]
+    print(config)
 
     log = Logs(os.path.join(args.out, "log"))
 
@@ -85,19 +95,38 @@ def main(args):
     optimizer = Adam(net.parameters(), lr=config["model"]["lr"], weight_decay=config["model"]["decay"])
 
     resume = 0
+    S3_CHECKPOINT = False
     if args.checkpoint:
+
+        if args.checkpoint.startswith("s3://"):
+            S3_CHECKPOINT = True
+            # load from s3
+            args.checkpoint = args.checkpoint[5:]
+            sess = boto3.Session(profile_name=config['dataset']['aws_profile'])
+            fs = s3fs.S3FileSystem(session=sess)
+            s3ckpt = s3fs.S3File(fs, args.checkpoint, 'rb')
 
         def map_location(storage, _):
             return storage.cuda() if torch.cuda.is_available() else storage.cpu()
 
-        # https://github.com/pytorch/pytorch/issues/7178
-        chkpt = torch.load(args.checkpoint, map_location=map_location)
-        net.load_state_dict(chkpt["state_dict"])
+    if args.checkpoint is not None:
+        def map_location(storage, _):
+            return storage.cuda() if torch.cuda.is_available() else storage.cpu()
+        try:
+            if S3_CHECKPOINT:
+                with s3fs.S3File(fs, args.checkpoint, 'rb') as C:
+                    state = torch.load(io.BytesIO(C.read()),
+                                       map_location = map_location)
+            else:
+                state = torch.load(args.checkpoint)
+            optimizer.load_state_dict(state['optimizer'])
+            net.load_state_dict(state['state_dict'])
+            net.to(device)
+        except FileNotFoundError as f:
+            print("{} checkpoint not found.".format(CHECKPOINT))
+
         log.log("Using checkpoint: {}".format(args.checkpoint))
 
-        if args.resume:
-            optimizer.load_state_dict(chkpt["optimizer"])
-            resume = chkpt["epoch"]
 
     losses = [name for _, name, _ in pkgutil.iter_modules([os.path.dirname(robosat_pink.losses.__file__)])]
     if config["model"]["loss"] not in [loss for loss in losses]:
@@ -106,7 +135,7 @@ def main(args):
     loss_module = import_module("robosat_pink.losses.{}".format(config["model"]["loss"]))
     criterion = getattr(loss_module, "{}".format(config["model"]["loss"].title()))().to(device)
 
-    train_loader, val_loader = get_dataset_loaders(config["dataset"]["path"], config, args.workers)
+    train_loader, val_loader = get_dataset_loaders(config, args.workers)
 
     if resume >= config["model"]["epochs"]:
         sys.exit(
@@ -116,12 +145,9 @@ def main(args):
         )
 
     log.log("")
-    log.log("--- Input tensor from Dataset: {} ---".format(config["dataset"]["path"]))
-    num_channel = 1
-    for channel in config["channels"]:
-        for band in channel["bands"]:
-            log.log("Channel {}:\t\t {}[band: {}]".format(num_channel, channel["sub"], band))
-            num_channel += 1
+    log.log("--- Input tensor from Dataset: {} ---".format(config["dataset"]["image_bucket"] + '/' +
+             config['dataset']['imagery_directory_regex']))
+
     log.log("")
     log.log("--- Hyper Parameters ---")
     log.log("Model:\t\t\t {}".format(config["model"]["name"]))
@@ -142,10 +168,9 @@ def main(args):
 
         train_hist = train(train_loader, num_classes, device, net, optimizer, criterion)
         log.log(
-            "Train    loss: {:.4f}, mIoU: {:.3f}, {} IoU: {:.3f}, MCC: {:.3f}".format(
+            "Train    loss: {:.4f}, mIoU: {:.3f}, IoU: {:.3f}, MCC: {:.3f}".format(
                 train_hist["loss"],
                 train_hist["miou"],
-                config["classes"][1]["title"],
                 train_hist["fg_iou"],
                 train_hist["mcc"],
             )
@@ -153,8 +178,8 @@ def main(args):
 
         val_hist = validate(val_loader, num_classes, device, net, criterion)
         log.log(
-            "Validate loss: {:.4f}, mIoU: {:.3f}, {} IoU: {:.3f}, MCC: {:.3f}".format(
-                val_hist["loss"], val_hist["miou"], config["classes"][1]["title"], val_hist["fg_iou"], val_hist["mcc"]
+            "Validate loss: {:.4f}, mIoU: {:.3f}, IoU: {:.3f}, MCC: {:.3f}".format(
+                val_hist["loss"], val_hist["miou"], val_hist["fg_iou"], val_hist["mcc"]
             )
         )
 
@@ -167,13 +192,14 @@ def main(args):
 
 def train(loader, num_classes, device, net, optimizer, criterion):
     num_samples = 0
-    running_loss = 0
+    running_loss= 0
 
     metrics = Metrics()
 
     net.train()
 
-    for images, masks, tiles in tqdm(loader, desc="Train", unit="batch", ascii=True):
+    for images, masks, _tile in tqdm(loader, desc="Train", unit="batch", ascii=True):
+
         images = images.to(device)
         masks = masks.to(device)
 
@@ -217,7 +243,7 @@ def validate(loader, num_classes, device, net, criterion):
     net.eval()
 
     with torch.no_grad():
-        for images, masks, tiles in tqdm(loader, desc="Validate", unit="batch", ascii=True):
+        for images, masks, _tile in tqdm(loader, desc="Validate", unit="batch", ascii=True):
             images = images.to(device)
             masks = masks.to(device)
 
@@ -245,35 +271,67 @@ def validate(loader, num_classes, device, net, criterion):
     }
 
 
-def get_dataset_loaders(path, config, workers):
+def get_dataset_loaders(config, workers):
 
-    mean, std = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]  # Values computed on ImageNet DataSet
+    p = pprint.PrettyPrinter()
 
-    transform = JointCompose(
-        [
-            # JointResize(config["model"]["tile_size"]),
-            # JointRandomFlipOrRotate(config["model"]["data_augmentation"]),
-            JointTransform(ImageToTensor(), MaskToTensor()),
-            # JointTransform(Normalize(mean=mean, std=std), None),
-        ]
-    )
+    fs = s3fs.S3FileSystem(session = boto3.Session(profile_name = config['dataset']['aws_profile']))
 
-    train_dataset = SlippyMapTilesConcatenation(
-        os.path.join(path, "training"),
-        config["channels"],
-        os.path.join(path, "training", "labels"),
-        joint_transform=transform,
-    )
+    imagery_searchpath = config['dataset']['image_bucket']  + '/' +  config['dataset']['imagery_directory_regex']
+    print("Searching for imagery...({})".format(imagery_searchpath))
+    imagery_candidates = fs.ls(config['dataset']['image_bucket'])
+    print("candidates:")
+    p.pprint(imagery_candidates)
+    imagery_locs = [c for c in imagery_candidates if match(imagery_searchpath, c)]
+    print("result:")
+    p.pprint(imagery_locs)
 
-    val_dataset = SlippyMapTilesConcatenation(
-        os.path.join(path, "validation"),
-        config["channels"],
-        os.path.join(path, "validation", "labels"),
-        joint_transform=transform,
-    )
+    mask_searchpath = config['dataset']['mask_bucket'] + '/' +  config['dataset']['mask_directory_regex']
+    print("Searching for mask...({})".format(mask_searchpath))
+    mask_candidates = fs.ls(config['dataset']['mask_bucket'])
+    print("candidates:")
+    p.pprint(mask_candidates)
+    mask_locs = [c for c in mask_candidates if match(mask_searchpath, c)]
+    print("result:")
+    p.pprint(mask_locs)
 
-    batch_size = config["model"]["batch_size"]
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True, num_workers=workers)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=True, num_workers=workers)
+    assert(len(mask_locs) > 0 and len(imagery_locs) > 0)
 
-    return train_loader, val_loader
+    print("Merging tilesets...")
+
+    allTiles = MultiSlippyMapTilesConcatenation(imagery_locs, mask_locs, aws_profile = config['dataset']['aws_profile'])
+    print(len(allTiles))
+
+    train_ids, test_ids  = train_test_split(allTiles.image_ids, train_size = config['dataset']['train_percent'])
+
+    transform = A.Compose([
+        #A.ToFloat(p = 1),
+        # A.RandomRotate90(p = 0.5),
+        #A.RandomRotate90(p = 0.5),
+        #A.RandomRotate90(p = 0.5), #these do something bad to the bands
+    #    A.Normalize(mean = mean, std = std, max_pixel_value = 1),
+        A.HorizontalFlip(p = 0.5),
+        A.VerticalFlip(p = 0.5),
+    #    A.ToFloat(p = 1, max_value = np.finfo(np.float64).max)
+    ])
+
+
+    train_tileset = MultiSlippyMapTilesConcatenation(imagery_locs, mask_locs, aws_profile = config['dataset']['aws_profile'], image_ids = train_ids, joint_transform = transform)
+
+    test_tileset =MultiSlippyMapTilesConcatenation(imagery_locs, mask_locs, aws_profile = config['dataset']['aws_profile'], image_ids = test_ids, joint_transform = transform)
+
+
+    train_loader = DataLoader(train_tileset,
+                              batch_size = config['model']['batch_size'],
+                              shuffle = True,
+                              drop_last = True,
+                              num_workers = workers)
+
+
+    test_loader = DataLoader(test_tileset,
+                             batch_size = config['model']['batch_size'],
+                             shuffle = True,
+                             drop_last = True,
+                             num_workers = workers)
+
+    return (train_loader, test_loader)

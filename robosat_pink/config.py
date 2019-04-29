@@ -7,11 +7,8 @@ import toml
 def check_config(config):
     """Check if config file is consistent. Exit on error if not."""
 
-    if "dataset" not in config.keys() or "path" not in config["dataset"].keys():
+    if "dataset" not in config.keys():
         sys.exit("dataset path is mandatory in config file")
-
-    if "classes" not in config.keys():
-        sys.exit("At least one class is mandatory in config file")
 
     if "channels" not in config.keys():
         sys.exit("At least one channel is mandatory in config file")

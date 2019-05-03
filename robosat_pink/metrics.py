@@ -2,6 +2,7 @@ import torch
 import math
 import numpy as np
 
+from sklearn import metrics
 
 class Metrics:
     """Tracking mean metrics """
@@ -62,3 +63,20 @@ class Metrics:
             mcc = float("NaN")
 
         return mcc
+
+    def get_classification_stats(self):
+
+        try:
+            accuracy = (self.tp + self.tn) / (self.tp + self.fp + self.fn + self.tn)
+            precision = self.tp / (self.tp + self.fp)
+            recall = self.tp / (self.tp + self.tn)
+            f1 = 2 * (recall * precision) / (recall + precision)
+        except ZeroDivisionError:
+            return (-1, -1, -1, -1)
+
+        return {
+            "accuracy" : accuracy,
+            "precision" : precision,
+            "recall" : recall,
+            "f1" : f1
+        }

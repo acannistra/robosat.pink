@@ -168,18 +168,23 @@ def main(args):
 
         train_hist = train(train_loader, num_classes, device, net, optimizer, criterion)
         log.log(
-            "Train    loss: {:.4f}, mIoU: {:.3f}, IoU: {:.3f}, MCC: {:.3f}".format(
+            "Train    loss: {:.4f}, mIoU: {:.3f}, IoU: {:.3f}, precision:  {:.3f}, recall: {:.3f}".format(
                 train_hist["loss"],
                 train_hist["miou"],
                 train_hist["fg_iou"],
-                train_hist["mcc"],
+                train_hist["precision"],
+                train_hist["recall"],
             )
         )
 
         val_hist = validate(val_loader, num_classes, device, net, criterion)
         log.log(
-            "Validate loss: {:.4f}, mIoU: {:.3f}, IoU: {:.3f}, MCC: {:.3f}".format(
-                val_hist["loss"], val_hist["miou"], val_hist["fg_iou"], val_hist["mcc"]
+            "Validate loss: {:.4f}, mIoU: {:.3f}, IoU: {:.3f}, precision:  {:.3f}, recall: {:.3f}".format(
+                train_hist["loss"],
+                train_hist["miou"],
+                train_hist["fg_iou"],
+                train_hist["precision"],
+                train_hist["recall"],
             )
         )
 
@@ -226,11 +231,17 @@ def train(loader, num_classes, device, net, optimizer, criterion):
 
     assert num_samples > 0, "dataset contains training images and labels"
 
+    class_stats = metrics.get_classification_stats()
+
     return {
         "loss": running_loss / num_samples,
         "miou": metrics.get_miou(),
         "fg_iou": metrics.get_fg_iou(),
         "mcc": metrics.get_mcc(),
+        "accuracy": class_stats['accuracy'],
+        "precision" : class_stats['precision'],
+        "recall" : class_stats['recall'],
+        "f1": class_stats['f1']
     }
 
 
@@ -263,11 +274,18 @@ def validate(loader, num_classes, device, net, criterion):
 
     assert num_samples > 0, "dataset contains validation images and labels"
 
+    class_stats = metrics.get_classification_stats()
+
+
     return {
         "loss": running_loss / num_samples,
         "miou": metrics.get_miou(),
         "fg_iou": metrics.get_fg_iou(),
         "mcc": metrics.get_mcc(),
+        "accuracy": class_stats['accuracy'],
+        "precision" : class_stats['precision'],
+        "recall" : class_stats['recall'],
+        "f1": class_stats['f1']
     }
 
 

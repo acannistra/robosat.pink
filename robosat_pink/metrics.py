@@ -23,7 +23,8 @@ class Metrics:
         """
 
         if is_prob:
-            predicted = torch.argmax(predicted, 0)
+            # predicted = torch.argmax(predicted, 0)
+            predicted = predicted > 0 ## SINGLE CLASS ONLY~!!
 
         confusion = predicted.view(-1).float() / label.view(-1).float()
 

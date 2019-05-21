@@ -45,6 +45,11 @@ import boto3
 import pandas as pd
 
 
+class ImageTiles(torch.utils.data.Dataset):
+    """
+        Just an image tileset.
+    """
+
 
 class PairedTiles(torch.utils.data.Dataset):
     """ Pairs images with mask from <image> and <tiles> directories
@@ -119,8 +124,9 @@ class S3SlippyMapTiles(torch.utils.data.Dataset):
 
         self.tiles = []
         self.transform = transform
+        self.aws_profile = aws_profile
 
-        self.tiles = [(tile, path) for tile, path in tiles_from_slippy_map_s3(root, aws_profile)]
+        self.tiles = [(id, tile, path) for id, tile, path in tiles_from_slippy_map_s3(root, aws_profile)]
         self.tiles.sort(key=lambda tile: tile[0])
         self.mode = mode
 
@@ -128,20 +134,22 @@ class S3SlippyMapTiles(torch.utils.data.Dataset):
         return len(self.tiles)
 
     def __getitem__(self, i):
-        tile, path = self.tiles[i]
+        id, tile, path = self.tiles[i]
         print(tile, path)
 
-        if self.mode == "image":
-            image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+        with rio.Env(profile_name=self.aws_profile):
 
-        elif self.mode == "multibands":
-            image = rio.open(path)
+            if self.mode == "image":
+                image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
 
-        elif self.mode == "mask":
-            image = np.array(Image.open(path).convert("P"))
+            elif self.mode == "multibands":
+                image = rio.open(path)
 
-        if self.transform is not None:
-            image = self.transform(image = image)['image']
+            elif self.mode == "mask":
+                image = np.array(Image.open(path).convert("P"))
+
+            if self.transform is not None:
+                image = self.transform(image = image)['image']
 
 
         return tile, image

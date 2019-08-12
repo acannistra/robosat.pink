@@ -106,6 +106,7 @@ def main(args):
                 state = torch.load(io.BytesIO(C.read()), map_location = map_location)
         else:
             state = torch.load(chkpt, map_location= map_location)
+        print(state)
         net.load_state_dict(state['state_dict'])
         net.to(device)
     except FileNotFoundError as f:

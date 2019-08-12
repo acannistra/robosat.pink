@@ -3,6 +3,7 @@ import io
 import sys
 import argparse
 sys.path.append("../model/robosat_pink/")
+os.environ['CURL_CA_BUNDLE']='/etc/ssl/certs/ca-certificates.crt'
 
 import pkgutil
 from importlib import import_module
@@ -18,7 +19,7 @@ from tqdm import tqdm
 from PIL import Image
 
 import robosat_pink.models
-from robosat_pink.datasets import SlippyMapTiles, BufferedSlippyMapDirectory
+from robosat_pink.datasets import SlippyMapTiles, BufferedSlippyMapDirectory, S3SlippyMapTiles
 from robosat_pink.tiles import tiles_from_slippy_map
 from robosat_pink.config import load_config
 from robosat_pink.colors import make_palette
@@ -137,24 +138,25 @@ def main(args):
     # ])
 
     if args.tiles.startswith('s3://'):
-        directory = S3SlippyMapTiles(args.tiles, mode='multibands', transform='none', aws_profile = args.aws_profile)
+        directory = S3SlippyMapTiles(args.tiles, mode='multibands', transform=None, aws_profile = args.aws_profile)
     else:
         directory = SlippyMapTiles(args.tiles, mode="multibands", transform = transform)
     # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size, overlap=args.overlap)
     loader = DataLoader(directory, batch_size=batch_size, num_workers=args.workers)
 
-    palette = make_palette(config["classes"][0]["color"], config["classes"][1]["color"])
+    palette = make_palette(config["classes"][0]["color"])
 
 
     # don't track tensors with autograd during prediction
     with torch.no_grad():
-        for images, tiles in tqdm(loader, desc="Eval", unit="batch", ascii=True):
+        for tiles, images in tqdm(loader, desc="Eval", unit="batch", ascii=True):
+            print(tiles)
             images = images.to(device)
             outputs = net(images)
 
 
-            print(len(tiles), len(probs))
-            for tile, prob in zip([tiles], probs):
+            print(len(tiles), len(outputs))
+            for tile, prob in zip([tiles], outputs):
                 savedir = args.probs
                 x = tile.x
                 y = tile.y

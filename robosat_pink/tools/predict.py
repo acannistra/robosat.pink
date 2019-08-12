@@ -97,6 +97,8 @@ def main(args):
         num_classes=num_classes, num_channels=num_channels, encoder=encoder, pretrained=pretrained
     ).to(device)
 
+    net = torch.nn.DataParallel(net)
+
 
     try:
         if S3_CHECKPOINT:
@@ -106,16 +108,14 @@ def main(args):
                 state = torch.load(io.BytesIO(C.read()), map_location = map_location)
         else:
             state = torch.load(chkpt, map_location= map_location)
+
+
         net.load_state_dict(state['state_dict'])
         net.to(device)
     except FileNotFoundError as f:
         print("{} checkpoint not found.".format(CHECKPOINT))
 
 
-
-    net = torch.nn.DataParallel(net)
-
-    net.load_state_dict(chkpt["state_dict"])
     net.eval()
     #
     # mean = np.array([[[8237.95084794]],

@@ -1,4 +1,4 @@
-import os
+`import os
 import sys
 import argparse
 
@@ -34,13 +34,17 @@ def add_parser(subparser):
 
     parser.add_argument("--checkpoint", type=str, required=True, help="model checkpoint to load")
     parser.add_argument("--workers", type=int, default=0, help="number of workers pre-processing images")
-    parser.add_argument("--overlap", type=int, default=64, help="tile pixel overlap to predict on")
+    # parser.add_argument("--overlap", type=int, default=64, help="tile pixel overlap to predict on")
     parser.add_argument("--config", type=str, required=True, help="path to configuration file")
     parser.add_argument("--batch_size", type=int, help="if set, override batch_size value from config file")
-    parser.add_argument("--tile_size", type=int, help="if set, override tile size value from config file")
-    parser.add_argument("--web_ui", action="store_true", help="activate web ui output")
-    parser.add_argument("--web_ui_base_url", type=str, help="web ui alternate base url")
-    parser.add_argument("--web_ui_template", type=str, help="path to an alternate web ui template")
+
+    parser.add_argument("--aws_profile", help='aws profile for use in s3 access')
+
+    parser.add_argument("--threshold", help='probability threshold for binarization of predictions (default = 0.0)', default = 0.0)
+    # parser.add_argument("--tile_size", type=int, help="if set, override tile size value from config file")
+    # parser.add_argument("--web_ui", action="store_true", help="activate web ui output")
+    # parser.add_argument("--web_ui_base_url", type=str, help="web ui alternate base url")
+    # parser.add_argument("--web_ui_template", type=str, help="path to an alternate web ui template")
     parser.add_argument("tiles", type=str, help="directory to read slippy map image tiles from")
     parser.add_argument("probs", type=str, help="directory to save slippy map probability masks to")
 
@@ -63,7 +67,16 @@ def main(args):
         return storage.cuda() if torch.cuda.is_available() else storage.cpu()
 
     # https://github.com/pytorch/pytorch/issues/7178
-    chkpt = torch.load(args.checkpoint, map_location=map_location)
+    # chkpt = torch.load(args.checkpoint, map_location=map_location)
+    S3_CHECKPOINT = False
+    chkpt = args.checkpoint
+    if chkpt.startswith("s3://"):
+        S3_CHECKPOINT = True
+        # load from s3
+        chkpt = chkpt[5:]
+        sess = boto3.Session(profile_name=args.aws_profile)
+        fs = s3fs.S3FileSystem(session=sess)
+        s3ckpt = s3fs.S3File(fs, chkptLoc, 'rb')
 
     models = [name for _, name, _ in pkgutil.iter_modules([os.path.dirname(robosat_pink.models.__file__)])]
     if config["model"]["name"] not in [model for model in models]:
@@ -82,32 +95,50 @@ def main(args):
         num_classes=num_classes, num_channels=num_channels, encoder=encoder, pretrained=pretrained
     ).to(device)
 
+
+    try:
+        if S3_CHECKPOINT:
+            with s3fs.S3File(fs, s3ckpt, 'rb') as C:
+                state = torch.load(io.BytesIO(C.read()), map_location = map_location)
+        else:
+            state = torch.load(chkpt, map_location= map_location)
+        optimizer.load_state_dict(state['optimizer'])
+        net.load_state_dict(state['state_dict'])
+        net.to(device)
+    except FileNotFoundError as f:
+        print("{} checkpoint not found.".format(CHECKPOINT))
+
+
+
     net = torch.nn.DataParallel(net)
 
     net.load_state_dict(chkpt["state_dict"])
     net.eval()
+    #
+    # mean = np.array([[[8237.95084794]],
+    #
+    #                [[6467.98702156]],
+    #
+    #                [[6446.61743148]],
+    #
+    #                [[4520.95360105]]])
+    # std  = array([[[12067.03414753]],
+    #
+    #                [[ 8810.00542703]],
+    #
+    #                [[10710.64289882]],
+    #
+    #                [[ 9024.92028515]]])
+    # #transform = Compose([ImageToTensor(), Normalize(mean=mean, std=std)])
+    # transform = A.Compose([
+    #     A.Normalize(mean = mean, std = std, max_pixel_value = 1.0),
+    #     A.ToFloat()
+    # ])
 
-    mean = np.array([[[8237.95084794]],
-
-                   [[6467.98702156]],
-
-                   [[6446.61743148]],
-
-                   [[4520.95360105]]])
-    std  = array([[[12067.03414753]],
-
-                   [[ 8810.00542703]],
-
-                   [[10710.64289882]],
-
-                   [[ 9024.92028515]]])
-    #transform = Compose([ImageToTensor(), Normalize(mean=mean, std=std)])
-    transform = A.Compose([
-        A.Normalize(mean = mean, std = std, max_pixel_value = 1.0),
-        A.ToFloat()
-    ])
-
-    directory = SlippyMapTiles(args.tiles, mode="multibands", transform = transform)
+    if args.tiles.startswith('s3://'):
+        directory = S3SlippyMapTiles(args.tiles, mode='multibands', transform='none', aws_profile = args.aws_profile)
+    else:
+        directory = SlippyMapTiles(args.tiles, mode="multibands", transform = transform)
     # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size, overlap=args.overlap)
     loader = DataLoader(directory, batch_size=batch_size, num_workers=args.workers)
 
@@ -120,20 +151,17 @@ def main(args):
             images = images.to(device)
             outputs = net(images)
 
-            # manually compute segmentation mask class probabilities per pixel
-            probs = torch.nn.functional.softmax(outputs, dim=1).data.cpu().numpy()
 
             print(len(tiles), len(probs))
             for tile, prob in zip([tiles], probs):
-                x, y, z = list(map(int, tile))
+                savedir = args.probs
+                x = tile.x
+                y = tile.y
+                z = tile.z
 
-                # we predicted on buffered tiles; now get back probs for original image
-                #prob = directory.unbuffer(prob)
+                # manually compute segmentation mask class probabilities per pixel
 
-                assert prob.shape[0] == 2, "single channel requires binary model"
-                assert np.allclose(np.sum(prob, axis=0), 1.0), "single channel requires probabilities to sum up to one"
-
-                image = np.around(prob[1:, :, :]).astype(np.uint8).squeeze()
+                image = (prob > args.threshold).astype(np.uint8)
 
                 out = Image.fromarray(image, mode="P")
                 out.putpalette(palette)

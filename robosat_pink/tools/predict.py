@@ -1,6 +1,8 @@
-`import os
+import os
+import io
 import sys
 import argparse
+sys.path.append("../model/robosat_pink/")
 
 import pkgutil
 from importlib import import_module
@@ -25,6 +27,9 @@ from robosat_pink.web_ui import web_ui
 
 import albumentations as A
 
+import boto3
+import s3fs
+
 def add_parser(subparser):
     parser = subparser.add_parser(
         "predict",
@@ -41,7 +46,7 @@ def add_parser(subparser):
     parser.add_argument("--aws_profile", help='aws profile for use in s3 access')
 
     parser.add_argument("--threshold", help='probability threshold for binarization of predictions (default = 0.0)', default = 0.0)
-    # parser.add_argument("--tile_size", type=int, help="if set, override tile size value from config file")
+    parser.add_argument("--tile_size", type=int, help="if set, override tile size value from config file")
     # parser.add_argument("--web_ui", action="store_true", help="activate web ui output")
     # parser.add_argument("--web_ui_base_url", type=str, help="web ui alternate base url")
     # parser.add_argument("--web_ui_template", type=str, help="path to an alternate web ui template")
@@ -74,9 +79,6 @@ def main(args):
         S3_CHECKPOINT = True
         # load from s3
         chkpt = chkpt[5:]
-        sess = boto3.Session(profile_name=args.aws_profile)
-        fs = s3fs.S3FileSystem(session=sess)
-        s3ckpt = s3fs.S3File(fs, chkptLoc, 'rb')
 
     models = [name for _, name, _ in pkgutil.iter_modules([os.path.dirname(robosat_pink.models.__file__)])]
     if config["model"]["name"] not in [model for model in models]:
@@ -98,11 +100,12 @@ def main(args):
 
     try:
         if S3_CHECKPOINT:
-            with s3fs.S3File(fs, s3ckpt, 'rb') as C:
+            sess = boto3.Session(profile_name=args.aws_profile)
+            fs = s3fs.S3FileSystem(session=sess)
+            with s3fs.S3File(fs, chkpt, 'rb') as C:
                 state = torch.load(io.BytesIO(C.read()), map_location = map_location)
         else:
             state = torch.load(chkpt, map_location= map_location)
-        optimizer.load_state_dict(state['optimizer'])
         net.load_state_dict(state['state_dict'])
         net.to(device)
     except FileNotFoundError as f:

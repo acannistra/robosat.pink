@@ -301,7 +301,8 @@ def validate(loader, num_classes, device, net, criterion):
     }
 
 
-def get_dataset_loaders(config, workers):
+def get_dataset_loaders(config, workers, idDir=None):
+    # idDir is the place to save train/test IDS as txt files.
 
     p = pprint.PrettyPrinter()
 
@@ -353,12 +354,13 @@ def get_dataset_loaders(config, workers):
     train_ids = train_tileset.getIds()
     test_ids = test_tileset.getIds()
 
-    with open(os.path.join(args.out, 'train_ids.txt'), 'w') as f:
-        for item in train_ids:
-            f.write("%s\n" % item)
-    with open(os.path.join(args.out, 'test_ids.txt'), 'w') as f:
-        for item in train_ids:
-            f.write("%s\n" % item)
+    if idDir:
+        with open(os.path.join(idDir, 'train_ids.txt'), 'w') as f:
+            for item in train_ids:
+                f.write("%s\n" % item)
+        with open(os.path.join(idDir, 'test_ids.txt'), 'w') as f:
+            for item in train_ids:
+                f.write("%s\n" % item)
 
 
     train_loader = DataLoader(train_tileset,

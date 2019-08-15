@@ -96,7 +96,7 @@ def main(args):
 
     resume = 0
 
-    # check checkpoint situation  + load if ncessary 
+    # check checkpoint situation  + load if ncessary
     checkpoint = None # no checkpoint
     if args.checkpoint: # command line checkpoint
         checkpoint = args.checkpoint
@@ -349,6 +349,16 @@ def get_dataset_loaders(config, workers):
     train_tileset = MultiSlippyMapTilesConcatenation(imagery_locs, mask_locs, aws_profile = config['dataset']['aws_profile'], image_ids = train_ids, joint_transform = transform)
 
     test_tileset =MultiSlippyMapTilesConcatenation(imagery_locs, mask_locs, aws_profile = config['dataset']['aws_profile'], image_ids = test_ids, joint_transform = transform)
+
+    train_ids = train_tileset.getIds()
+    test_ids = test_tileset.getIds()
+
+    with open(os.path.join(out, 'train_ids.txt'), 'w') as f:
+        for item in train_ids:
+            f.write("%s\n" % item)
+    with open(os.path.join(out, 'test_ids.txt'), 'w') as f:
+        for item in train_ids:
+            f.write("%s\n" % item)        
 
 
     train_loader = DataLoader(train_tileset,

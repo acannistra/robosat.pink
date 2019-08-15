@@ -240,6 +240,9 @@ class MultiSlippyMapTilesConcatenation(torch.utils.data.Dataset):
     def __len__(self):
         return(len(self.overlap))
 
+    def getIds(self):
+        return self.image_ids
+
     def __getitem__(self, i):
 
         match = self.overlap.iloc[i]

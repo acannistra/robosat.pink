@@ -353,12 +353,12 @@ def get_dataset_loaders(config, workers):
     train_ids = train_tileset.getIds()
     test_ids = test_tileset.getIds()
 
-    with open(os.path.join(out, 'train_ids.txt'), 'w') as f:
+    with open(os.path.join(args.out, 'train_ids.txt'), 'w') as f:
         for item in train_ids:
             f.write("%s\n" % item)
-    with open(os.path.join(out, 'test_ids.txt'), 'w') as f:
+    with open(os.path.join(args.out, 'test_ids.txt'), 'w') as f:
         for item in train_ids:
-            f.write("%s\n" % item)        
+            f.write("%s\n" % item)
 
 
     train_loader = DataLoader(train_tileset,

@@ -147,7 +147,7 @@ def main(args):
     loss_module = import_module("robosat_pink.losses.{}".format(config["model"]["loss"]))
     criterion = getattr(loss_module, "{}".format(config["model"]["loss"].title()))().to(device)
 
-    train_loader, val_loader = get_dataset_loaders(config, args.workers)
+    train_loader, val_loader = get_dataset_loaders(config, args.workers, idDir = args.out)
 
     if resume >= config["model"]["epochs"]:
         sys.exit(

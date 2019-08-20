@@ -101,7 +101,7 @@ def main(args):
     if args.checkpoint: # command line checkpoint
         checkpoint = args.checkpoint
     try: # config file checkpoint
-        checkpoint = config["checkpoint"]
+        checkpoint = config["checkpoint"]['path']
     except:
         # no checkpoint in config file
         pass

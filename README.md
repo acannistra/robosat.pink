@@ -1,3 +1,7 @@
+⚠️  <b>WARNING:</b> This repository is responsible for the implementation of a multispectral image segmentation neural network used in <a href="https://github.com/acannistra/planet-snowcover">`planet-snowcover`</a>. We offer no warranty, express or implied, for functionality that suits any other purpose, including those indicated by the original repository and its owners. The following readme is kept for posterity, but much of the functionality is different. ⚠️ 
+
+<hl></hl>
+
 <h1 align='center'>RoboSat.pink</h1>
 <h2 align='center'>Semantic Segmentation ecosystem for GeoSpatial Imagery</h2>
 

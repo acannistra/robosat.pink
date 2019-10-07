@@ -147,10 +147,10 @@ def main(args):
 
                 # manually compute segmentation mask class probabilities per pixel
 
-                image = (prob > args.threshold).astype(np.uint8)
+                image = (prob > args.threshold).astype(np.uint8) * 255.0
 
                 out = Image.fromarray(image, mode="P")
-                out.putpalette(palette)
+                # out.putpalette(palette)
 
                 os.makedirs(os.path.join(args.preds, str(z), str(x)), exist_ok=True)
                 path = os.path.join(args.preds, str(z), str(x), str(y) + ".png")

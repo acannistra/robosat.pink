@@ -127,8 +127,6 @@ def main(args):
     # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size, overlap=args.overlap)
     loader = DataLoader(directory, batch_size=batch_size, num_workers=args.workers)
 
-    print(len(directory))
-
     palette = make_palette(config["classes"][0]["color"])
 
 
@@ -141,10 +139,9 @@ def main(args):
 
 
             print(len(tiles), len(outputs))
-            for i, (tile, prob) in enumerate(zip(tiles, outputs)):
-                print(tile)
-                print("Saving tile {}...".format(i))
+            for tile, prob in zip([tiles], outputs):
                 savedir = args.preds
+                tile = tile[0]
                 x = tile[0].item()
                 y = tile[1].item()
                 z = tile[2].item()

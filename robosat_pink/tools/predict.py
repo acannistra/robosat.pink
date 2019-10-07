@@ -52,6 +52,53 @@ def add_parser(subparser):
 
     parser.set_defaults(func=main)
 
+def _write_png(tile, data, outputdir, palette):
+    out = Image.fromarray(data, mode="P")
+    out.putpalette(palette)
+
+    x, y, z = tile[0].item(), tile[1].item(), tile[2].item()
+
+    path = os.path.join(outputdir, str(z), str(x), str(y) + ".png")
+
+    print('writing {}'.format(path))
+    with fs.open(path, 'wb') as f:
+        out.save(f, format='png', optimize=True)
+
+    ewruen r
+
+def _write_tif(tile, data, outputdir):
+    tile_xy_bounds = xy_bounds(tile)
+    tile_latlon_bounds = bounds(tile)
+
+    bands = 1
+    height, width = data.shape
+
+    new_transform = rio.transform.from_bounds(*tile_latlon_bounds, width, height)
+
+    profile = {
+        'driver' : 'GTiff',
+        'dtype' : data.dtype,
+        'height' : height,
+        'width' : width,
+        'count' : bands,
+        'crs' : {'init' : 'epsg:4326'},
+        'transform' : new_transform
+    }
+    x, y, z = tile[0].item(), tile[1].item(), tile[2].item()
+
+    tile_file = os.path.join(outputdir, str(z), str(x), str(y) + ".tif")
+
+#    try:
+
+
+    # write data to file
+    with rio.open(tile_file, 'w', **profile) as dst:
+        for band in range(0, bands ):
+            dst.write(data[band], band+1)
+
+
+    return tile, True
+
 
 def main(args):
     config = load_config(args.config)
@@ -145,18 +192,8 @@ def main(args):
                 print(tile)
                 print("Saving tile {}...".format(i))
                 savedir = args.preds
-                x = tile[0].item()
-                y = tile[1].item()
-                z = tile[2].item()
 
                 # manually compute segmentation mask class probabilities per pixel
-
                 image = (prob > args.threshold).cpu().numpy().astype(np.uint8).squeeze()
 
-                out = Image.fromarray(image, mode="P")
-                out.putpalette(palette)
-
-                os.makedirs(os.path.join(args.preds, str(z), str(x)), exist_ok=True)
-                path = os.path.join(args.preds, str(z), str(x), str(y) + ".png")
-
-                out.save(path, optimize=True)
+                _write_png(tile, image, savedir, palette)

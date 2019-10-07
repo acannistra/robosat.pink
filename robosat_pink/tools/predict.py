@@ -57,14 +57,14 @@ def _write_png(tile, data, outputdir, palette):
     out.putpalette(palette)
 
     x, y, z = tile[0].item(), tile[1].item(), tile[2].item()
-
+    
+    os.makedirs(os.path.join(outputdir, str(z), str(x)), exist_ok=True)
     path = os.path.join(outputdir, str(z), str(x), str(y) + ".png")
 
     print('writing {}'.format(path))
-    with fs.open(path, 'wb') as f:
+    with open(path, 'wb') as f:
         out.save(f, format='png', optimize=True)
 
-    ewruen r
 
 def _write_tif(tile, data, outputdir):
     tile_xy_bounds = xy_bounds(tile)

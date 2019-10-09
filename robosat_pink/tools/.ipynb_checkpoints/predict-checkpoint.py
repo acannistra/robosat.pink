@@ -9,6 +9,7 @@ import pkgutil
 from importlib import import_module
 
 import numpy as np
+import rasterio as rio
 
 import torch
 import torch.backends.cudnn
@@ -17,6 +18,8 @@ from torchvision.transforms import Compose, Normalize
 
 from tqdm import tqdm
 from PIL import Image
+
+from mercantile import Tile, xy_bounds, bounds
 
 import robosat_pink.models
 from robosat_pink.datasets import SlippyMapTiles, BufferedSlippyMapDirectory, S3SlippyMapTiles
@@ -42,6 +45,8 @@ def add_parser(subparser):
 
     parser.add_argument("--config", type=str, required=True, help="path to configuration file")
     parser.add_argument("--batch_size", type=int, help="if set, override batch_size value from config file")
+    
+    parser.add_argument("--create_tif", action='store_true', help="create .tif tiles for mask")
 
     parser.add_argument("--aws_profile", help='aws profile for use in s3 access')
 
@@ -51,6 +56,51 @@ def add_parser(subparser):
     parser.add_argument("preds", type=str, help="directory to save slippy map prediction masks to")
 
     parser.set_defaults(func=main)
+
+def _write_png(tile, data, outputdir, palette):
+    out = Image.fromarray(data, mode="P")
+    out.putpalette(palette)
+
+    os.makedirs(os.path.join(outputdir, str(tile.z), str(tile.x)), exist_ok=True)
+    path = os.path.join(outputdir, str(tile.z), str(tile.x), str(tile.y) + ".png")
+
+    out.save(path, optimize=True)
+
+
+def _write_tif(tile, data, outputdir):
+    tile_xy_bounds = xy_bounds(tile)
+    tile_latlon_bounds = bounds(tile)
+
+    bands = 1
+    height, width = data.shape
+
+    new_transform = rio.transform.from_bounds(*tile_latlon_bounds, width, height)
+
+    print("Writing tile, bounds {}".format(tile_latlon_bounds))
+    
+    profile = {
+        'driver' : 'GTiff',
+        'dtype' : data.dtype,
+        'height' : height,
+        'width' : width,
+        'count' : bands,
+        'crs' : {'init' : 'epsg:4326'},
+        'transform' : new_transform
+    }
+    print(profile)
+
+    tile_file = os.path.join(outputdir, str(tile.z), str(tile.x), str(tile.y) + ".tif")
+
+#    try:
+
+
+    # write data to file
+    with rio.open(tile_file, 'w', **profile) as dst:
+        for band in range(0, bands):
+            dst.write(data, band+1)
+
+
+    return tile, True
 
 
 def main(args):
@@ -127,6 +177,8 @@ def main(args):
     # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size, overlap=args.overlap)
     loader = DataLoader(directory, batch_size=batch_size, num_workers=args.workers)
 
+    print(len(directory))
+
     palette = make_palette(config["classes"][0]["color"])
 
 
@@ -139,21 +191,19 @@ def main(args):
 
 
             print(len(tiles), len(outputs))
-            for tile, prob in zip([tiles], outputs):
+            for i, (tile, prob) in enumerate(zip(tiles, outputs)):
+                tile = Tile(tile[0].item(), tile[1].item(), tile[2].item())
+                print(tile)
+                print("Saving tile {}...".format(i))
                 savedir = args.preds
-                tile = tile[0]
-                x = tile[0].item()
-                y = tile[1].item()
-                z = tile[2].item()
 
                 # manually compute segmentation mask class probabilities per pixel
-
                 image = (prob > args.threshold).cpu().numpy().astype(np.uint8).squeeze()
 
-                out = Image.fromarray(image, mode="P")
-                out.putpalette(palette)
-
-                os.makedirs(os.path.join(args.preds, str(z), str(x)), exist_ok=True)
-                path = os.path.join(args.preds, str(z), str(x), str(y) + ".png")
-
-                out.save(path, optimize=True)
+                _write_png(tile, image, savedir, palette)
+                
+                if(args.create_mask):
+                    _write_tif(tile, image, savedir)
+                
+        
+        

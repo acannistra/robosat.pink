@@ -355,6 +355,7 @@ def get_dataset_loaders(config, workers, idDir=None):
     test_ids = test_tileset.getIds()
 
     if idDir:
+        print("Writing train/test ids to {}.".format(idDir))
         with open(os.path.join(idDir, 'train_ids.txt'), 'w') as f:
             for item in train_ids:
                 f.write("%s\n" % item)

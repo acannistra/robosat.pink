@@ -360,7 +360,7 @@ def get_dataset_loaders(config, workers, idDir=None):
             for item in train_ids:
                 f.write("%s\n" % item)
         with open(os.path.join(idDir, 'test_ids.txt'), 'w') as f:
-            for item in train_ids:
+            for item in test_ids:
                 f.write("%s\n" % item)
 
 

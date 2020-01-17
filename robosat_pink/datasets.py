@@ -114,7 +114,7 @@ class S3SlippyMapTiles(torch.utils.data.Dataset):
     """Dataset for images stored in slippy map format on AWS S3
     """
 
-    def __init__(self, root, mode, transform=None, aws_profile = 'default'):
+    def __init__(self, root, mode, transform=None, aws_profile = 'default', ext=None):
         super().__init__()
 
         self.tiles = []
@@ -122,6 +122,11 @@ class S3SlippyMapTiles(torch.utils.data.Dataset):
         self.aws_profile = aws_profile
 
         self.tiles = [(id, tile, path) for id, tile, path in tiles_from_slippy_map_s3(root, aws_profile)]
+        
+        if ext:
+            keepTiles = [t for t in self.tiles if os.path.splitext(t[2])[1] == "."+ext]
+            self.tiles = keepTiles 
+            
         self.tiles.sort(key=lambda tile: tile[0])
         self.mode = mode
 
@@ -166,6 +171,7 @@ class SlippyMapTiles(torch.utils.data.Dataset):
         self.tile_index = tile_index
 
         self.tiles = [(tile, path) for tile, path in tiles_from_slippy_map(root)]
+        
         if tile_index:
             self.tiles = dict(self.tiles)
 

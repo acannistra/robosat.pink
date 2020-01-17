@@ -149,7 +149,7 @@ def main(args):
         num_classes=num_classes, num_channels=num_channels, encoder=encoder, pretrained=pretrained
     ).to(device)
 
-#     net = torch.nn.DataParallel(net)
+    net = torch.nn.DataParallel(net)
 
 
     try:
@@ -198,7 +198,7 @@ def main(args):
 
                 _write_png(tile, image, savedir, palette)
                 
-                if(args.create_mask):
+                if(args.create_tif):
                     _write_tif(tile, image, savedir)
                 
         

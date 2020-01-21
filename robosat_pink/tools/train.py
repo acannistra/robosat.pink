@@ -192,11 +192,11 @@ def main(args):
         val_hist = validate(val_loader, num_classes, device, net, criterion)
         log.log(
             "Validate loss: {:.4f}, mIoU: {:.3f}, IoU: {:.3f}, precision:  {:.3f}, recall: {:.3f}".format(
-                train_hist["loss"],
-                train_hist["miou"],
-                train_hist["fg_iou"],
-                train_hist["precision"],
-                train_hist["recall"],
+                val_hist["loss"],
+                val_hist["miou"],
+                val_hist["fg_iou"],
+                val_hist["precision"],
+                val_hist["recall"],
             )
         )
 

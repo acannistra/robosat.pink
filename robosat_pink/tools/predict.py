@@ -160,7 +160,7 @@ def main(args):
                 state = torch.load(io.BytesIO(C.read()), map_location = map_location)
         else:
             state = torch.load(chkpt, map_location= map_location)
-        net.load_state_dict(state['state_dict'])
+        net.load_state_dict(state['state_dict'], strict=False)
         net.to(device)
     except FileNotFoundError as f:
         print("{} checkpoint not found.".format(chkpt))
@@ -172,7 +172,7 @@ def main(args):
     if args.tiles.startswith('s3://'):
         directory = S3SlippyMapTiles(args.tiles, mode='multibands', transform=None, aws_profile = args.aws_profile)
     else:
-        directory = SlippyMapTiles(args.tiles, mode="multibands", transform = transform)
+        directory = SlippyMapTiles(args.tiles, mode="multibands", transform = None)
     # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size, overlap=args.overlap)
     loader = DataLoader(directory, batch_size=batch_size, num_workers=args.workers)
 

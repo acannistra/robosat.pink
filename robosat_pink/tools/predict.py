@@ -11,9 +11,14 @@ from importlib import import_module
 import numpy as np
 import rasterio as rio
 
+import pprint
+from re import match
+
+import pandas as pd
+
 import torch
 import torch.backends.cudnn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from torchvision.transforms import Compose, Normalize
 
 from tqdm import tqdm
@@ -22,7 +27,7 @@ from PIL import Image
 from mercantile import Tile, xy_bounds, bounds
 
 import robosat_pink.models
-from robosat_pink.datasets import SlippyMapTiles, BufferedSlippyMapDirectory, S3SlippyMapTiles
+from robosat_pink.datasets import SlippyMapTiles, BufferedSlippyMapDirectory, S3SlippyMapTiles, SlippyMapTilesConcatenation
 from robosat_pink.tiles import tiles_from_slippy_map
 from robosat_pink.config import load_config
 from robosat_pink.colors import make_palette
@@ -52,9 +57,11 @@ def add_parser(subparser):
 
     parser.add_argument("--threshold", help='probability threshold for binarization of predictions (default = 0.0)', default = 0.0)
 
-    parser.add_argument("tiles", type=str, help="directory to read slippy map image tiles from")
+    parser.add_argument("--tiles", type=str, help="directory to read slippy map image tiles from. Will use config if not provided.")
     parser.add_argument("preds", type=str, help="directory to save slippy map prediction masks to")
 
+    parser.add_argument("--tile_ids", type=str, help="File containing image ids to use for prediction.")
+    
     parser.set_defaults(func=main)
 
 def _write_png(tile, data, outputdir, palette):
@@ -167,16 +174,42 @@ def main(args):
 
 
     net.eval()
-  
     
-    if args.tiles.startswith('s3://'):
-        directory = S3SlippyMapTiles(args.tiles, mode='multibands', transform=None, aws_profile = args.aws_profile)
-    else:
-        directory = SlippyMapTiles(args.tiles, mode="multibands", transform = None)
-    # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size, overlap=args.overlap)
-    loader = DataLoader(directory, batch_size=batch_size, num_workers=args.workers)
+    tile_ids_filter = None
+    if args.tile_ids is not None:
+        tile_ids_filter = pd.read_csv(args.tile_ids, names=['ids']).ids.values
+    
+    
 
-    print("{} image tiles found.".format(len(directory)))
+    ## Construct torch Dataset, either from single directory (if args.tiles is given) or from config. Used --tile_ids argument
+    ## to determine how to filter resulting tiles (e.g. to only run prediction on a test set)
+    if args.tiles is not None:
+        # use tiledir  provided 
+        if args.tiles.startswith('s3://'):
+            allImagery = S3SlippyMapTiles(args.tiles, mode='multibands', transform=None, aws_profile = args.aws_profile, ids = tile_ids_filter)
+        else:
+            allImagery = SlippyMapTiles(args.tiles, mode="multibands", transform = None)
+        # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size,re overlap=args.overlap)
+    else: # use config to search for tiles
+        fs = s3fs.S3FileSystem(session = boto3.Session(profile_name = config['dataset']['aws_profile']))
+        p = pprint.PrettyPrinter()
+        imagery_searchpath = config['dataset']['image_bucket']  + '/' +  config['dataset']['imagery_directory_regex']
+        print("Searching for imagery...({})".format(imagery_searchpath))
+        imagery_candidates = fs.ls(config['dataset']['image_bucket'])
+        print("candidates:")
+        p.pprint(imagery_candidates)
+        imagery_locs = [c for c in imagery_candidates if match(imagery_searchpath, c)]
+        print("result:")
+        p.pprint(imagery_locs)
+        print("Concatenating imagery into torch.data.Dataset...")
+        
+        allImagery = ConcatDataset([
+            S3SlippyMapTiles("s3://" +  loc, mode='multibands', transform=None, aws_profile=args.aws_profile, ids=tile_ids_filter) 
+            for loc in imagery_locs
+        ])
+        
+    print("{} image tiles found.".format(len(allImagery)))
+    loader = DataLoader(allImagery, batch_size=batch_size, num_workers=args.workers)
 
     palette = make_palette(config["classes"][0]["color"])
 

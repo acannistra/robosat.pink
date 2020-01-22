@@ -184,11 +184,12 @@ def main(args):
     ## Construct torch Dataset, either from single directory (if args.tiles is given) or from config. Used --tile_ids argument
     ## to determine how to filter resulting tiles (e.g. to only run prediction on a test set)
     if args.tiles is not None:
+        imagery_locs = [args.tiles]
         # use tiledir  provided 
         if args.tiles.startswith('s3://'):
-            allImagery = S3SlippyMapTiles(args.tiles, mode='multibands', transform=None, aws_profile = args.aws_profile, ids = tile_ids_filter)
+            allImageryDatasets = [S3SlippyMapTiles(args.tiles, mode='multibands', transform=None, aws_profile = args.aws_profile, ids = tile_ids_filter)]
         else:
-            allImagery = SlippyMapTiles(args.tiles, mode="multibands", transform = None)
+            allImageryDatasets = [SlippyMapTiles(args.tiles, mode="multibands", transform = None)]
         # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size,re overlap=args.overlap)
     else: # use config to search for tiles
         fs = s3fs.S3FileSystem(session = boto3.Session(profile_name = config['dataset']['aws_profile']))
@@ -201,38 +202,39 @@ def main(args):
         imagery_locs = [c for c in imagery_candidates if match(imagery_searchpath, c)]
         print("result:")
         p.pprint(imagery_locs)
-        print("Concatenating imagery into torch.data.Dataset...")
         
-        allImagery = ConcatDataset([
+        allImageryDatasets = [
             S3SlippyMapTiles("s3://" +  loc, mode='multibands', transform=None, aws_profile=args.aws_profile, ids=tile_ids_filter) 
             for loc in imagery_locs
-        ])
+        ]
         
-    print("{} image tiles found.".format(len(allImagery)))
-    loader = DataLoader(allImagery, batch_size=batch_size, num_workers=args.workers)
-
+    
     palette = make_palette(config["classes"][0]["color"])
 
 
     # don't track tensors with autograd during prediction
     with torch.no_grad():
-        for tiles, images in tqdm(loader, desc="Eval", unit="batch", ascii=True):
-            tiles = list(zip(tiles[0], tiles[1], tiles[2]))
-            images = images.to(device)
-            outputs = net(images)
+        for dataset, imageloc in zip(allImageryDatasets, imagery_locs):
+            print("Prediction: {}".format(imageloc))
+            imageloc_path = imageloc.replace("/", ":") # to not recreate directory structure when saving
+            loader = DataLoader(dataset, batch_size=batch_size, num_workers=args.workers)
+            for tiles, images in tqdm(loader, desc="Eval", unit="batch", ascii=True):
+                tiles = list(zip(tiles[0], tiles[1], tiles[2]))
+                images = images.to(device)
+                outputs = net(images)
 
 
-            for i, (tile, prob) in enumerate(zip(tiles, outputs)):
-                tile = Tile(tile[0].item(), tile[1].item(), tile[2].item())
-                savedir = args.preds
+                for i, (tile, prob) in enumerate(zip(tiles, outputs)):
+                    tile = Tile(tile[0].item(), tile[1].item(), tile[2].item())
+                    savedir = args.preds
 
-                # manually compute segmentation mask class probabilities per pixel
-                image = (prob > args.threshold).cpu().numpy().astype(np.uint8).squeeze()
+                    # manually compute segmentation mask class probabilities per pixel
+                    image = (prob > args.threshold).cpu().numpy().astype(np.uint8).squeeze()
 
-                _write_png(tile, image, savedir, palette)
-                
-                if(args.create_tif):
-                    _write_tif(tile, image, savedir)
-                
+                    _write_png(tile, image, os.path.join(savedir, imageloc_path), palette)
+
+                    if(args.create_tif):
+                        _write_tif(tile, image, os.path.join(savedir, imageloc_path))
+
         
         

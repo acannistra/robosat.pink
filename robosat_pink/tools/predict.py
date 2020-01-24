@@ -127,11 +127,12 @@ def main(args):
     chkpt = None # no checkpoint
     if args.checkpoint: # command line checkpoint
         chkpt = args.checkpoint
-    try: # config file checkpoint
-        chkpt = config["checkpoint"]['path']
-    except:
-        # no checkpoint in config file
-        pass
+    else:
+        try: # config file checkpoint
+            chkpt = config["checkpoint"]['path']
+        except:
+            # no checkpoint in config file
+            pass
 
     S3_CHECKPOINT = False
     if chkpt.startswith("s3://"):

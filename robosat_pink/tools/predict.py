@@ -50,7 +50,7 @@ def add_parser(subparser):
 
     parser.add_argument("--config", type=str, required=True, help="path to configuration file")
     parser.add_argument("--batch_size", type=int, help="if set, override batch_size value from config file")
-    
+
     parser.add_argument("--create_tif", action='store_true', help="create .tif tiles for mask")
 
     parser.add_argument("--aws_profile", help='aws profile for use in s3 access')
@@ -60,8 +60,15 @@ def add_parser(subparser):
     parser.add_argument("--tiles", type=str, help="directory to read slippy map image tiles from. Will use config if not provided.")
     parser.add_argument("preds", type=str, help="directory to save slippy map prediction masks to")
 
+    parser.add_argument("--buffer", action='store_true',
+     help="Buffer images before prediction to avoid artifacts. "
+    )
+
+    parser.add_argument("--buffer_overlap", type=int, default=64,
+    help="Neighboring-tile overlap width in pixels for buffer.")
+
     parser.add_argument("--tile_ids", type=str, help="File containing image ids to use for prediction.")
-    
+
     parser.set_defaults(func=main)
 
 def _write_png(tile, data, outputdir, palette):
@@ -83,7 +90,7 @@ def _write_tif(tile, data, outputdir):
 
     new_transform = rio.transform.from_bounds(*tile_latlon_bounds, width, height)
 
-    
+
     profile = {
         'driver' : 'GTiff',
         'dtype' : data.dtype,
@@ -175,20 +182,20 @@ def main(args):
 
 
     net.eval()
-    
+
     tile_ids_filter = None
     if args.tile_ids is not None:
         tile_ids_filter = pd.read_csv(args.tile_ids, names=['ids']).ids.values
-    
-    
+
+
 
     ## Construct torch Dataset, either from single directory (if args.tiles is given) or from config. Used --tile_ids argument
     ## to determine how to filter resulting tiles (e.g. to only run prediction on a test set)
     if args.tiles is not None:
         imagery_locs = [args.tiles]
-        # use tiledir  provided 
+        # use tiledir  provided
         if args.tiles.startswith('s3://'):
-            allImageryDatasets = [S3SlippyMapTiles(args.tiles, mode='multibands', transform=None, aws_profile = args.aws_profile, ids = tile_ids_filter)]
+            allImageryDatasets = [S3SlippyMapTiles(args.tiles, mode='multibands', transform=None, aws_profile = args.aws_profile, ids = tile_ids_filter, buffered=args.buffer, buffered_overlap=args.buffer_overlap, tile_size=tile_size, bands=num_channels)]
         else:
             allImageryDatasets = [SlippyMapTiles(args.tiles, mode="multibands", transform = None)]
         # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size,re overlap=args.overlap)
@@ -203,13 +210,13 @@ def main(args):
         imagery_locs = [c for c in imagery_candidates if match(imagery_searchpath, c)]
         print("result:")
         p.pprint(imagery_locs)
-        
+
         allImageryDatasets = [
-            S3SlippyMapTiles("s3://" +  loc, mode='multibands', transform=None, aws_profile=args.aws_profile, ids=tile_ids_filter) 
+            S3SlippyMapTiles("s3://" +  loc, mode='multibands', transform=None, aws_profile=args.aws_profile, ids=tile_ids_filter)
             for loc in imagery_locs
         ]
-        
-    
+
+
     palette = make_palette(config["classes"][0]["color"])
 
 
@@ -236,6 +243,3 @@ def main(args):
 
                     if(args.create_tif):
                         _write_tif(tile, image, os.path.join(savedir, imageloc_path))
-
-        
-        

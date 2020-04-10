@@ -239,6 +239,9 @@ def main(args):
                     # manually compute segmentation mask class probabilities per pixel
                     image = (prob > args.threshold).cpu().numpy().astype(np.uint8).squeeze()
 
+                    if args.buffer:
+                        image = allImageryDatasets[0].unbuffer(image)
+
                     _write_png(tile, image, os.path.join(savedir, imageloc_path), palette)
 
                     if(args.create_tif):

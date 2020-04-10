@@ -112,54 +112,88 @@ class PairedTiles(torch.utils.data.Dataset):
 # Single Slippy Map directory structure
 class S3SlippyMapTiles(torch.utils.data.Dataset):
     """Dataset for images stored in slippy map format on AWS S3
-    
+
         provide list of tiles to `ids` to only return a dataset with those tiles.
     """
 
-    def __init__(self, root, mode, transform=None, aws_profile = 'default', ext=None, ids=None):
+
+    def __init__(self, root, mode, transform=None, aws_profile = 'default', ext=None, buffered=False, buffered_overlap=64, tilesize=512, bands=4, ids=None):
         super().__init__()
 
         self.tiles = []
+        self.tileids = []
         self.transform = transform
         self.aws_profile = aws_profile
+        self.buffered = buffered
+        self.buffered_overlap = buffered_overlap
+        self.tilesize = tilesize
+        self.bands = bands
 
-        self.tiles = [(id, tile, path) for id, tile, path in tiles_from_slippy_map_s3(root, aws_profile)]
-        
+        _allids, _alltiles, _allpaths = list(zip(*tiles_from_slippy_map_s3(root, aws_profile)))
+
+        self.tiles = [
+            (id, tile, path) for id, tile, path
+            in zip(_allids, _alltiles, _allpaths)
+        ]
+
+        self.tileids = { id:index for index, id in enumerate(_alltiles) }
+
         if ext:
             keepTiles = [t for t in self.tiles if os.path.splitext(t[2])[1] == "."+ext]
-            self.tiles = keepTiles 
-            
+            self.tiles = keepTiles
+
         if ids is not None:
             keepTiles = [t for t in self.tiles if t[0] in ids]
             self.tiles = keepTiles
-            
+
         self.tiles.sort(key=lambda tile: tile[0])
         self.mode = mode
 
     def __len__(self):
         return len(self.tiles)
 
-    def __getitem__(self, i):
+    def __getitem__(self, i, ignore_buffer=False):
         id, tile, path = self.tiles[i]
 
-
         image = None
-        with rio.Env(profile_name=self.aws_profile):
 
-            if self.mode == "image":
-                image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+        # if this is a buffered instance and ignore_buffer is set,
+        # or if this is a normal non-buffered instance, then we
+        # do the regular tile retreival.
+        if (self.buffered and ignore_buffer) or not self.buffered:
+            with rio.Env(profile_name=self.aws_profile):
 
-            elif self.mode == "multibands":
-                image = rio.open(path).read()
+                if self.mode == "image":
+                    image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
 
-            elif self.mode == "mask":
-                image = np.array(Image.open(path).convert("P"))
+                elif self.mode == "multibands":
+                    image = rio.open(path).read()
 
-            if self.transform is not None:
-                image = self.transform(image = image)['image']
+                elif self.mode == "mask":
+                    image = np.array(Image.open(path).convert("P"))
 
+                if self.transform is not None:
+                    image = self.transform(image = image)['image']
+
+        else:
+            if self.buffered:
+                image = buffer_tile_image(
+                    tile, self, self.buffered_overlap, self.tilesize,
+                    self.bands
+                )
 
         return tile, torch.FloatTensor(image)
+
+
+    def get_tile_by_id(self, tileId):
+        tileIndex = self.tileids[tileId]
+        return (self.__getitem__(tileIndex, ignore_buffer=True))
+
+    def unbuffer(self, data):
+        o = self.buffered_overlap
+        _, x, y = data.shape
+
+        return data[:, o : x - o, o : y - o]
 
 
 
@@ -177,7 +211,7 @@ class SlippyMapTiles(torch.utils.data.Dataset):
         self.tile_index = tile_index
 
         self.tiles = [(tile, path) for tile, path in tiles_from_slippy_map(root)]
-        
+
         if tile_index:
             self.tiles = dict(self.tiles)
 
@@ -205,6 +239,7 @@ class SlippyMapTiles(torch.utils.data.Dataset):
 
 
         return tile, image
+
 
 
 class MultiSlippyMapTilesConcatenation(torch.utils.data.Dataset):

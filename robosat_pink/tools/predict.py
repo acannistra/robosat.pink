@@ -195,7 +195,7 @@ def main(args):
         imagery_locs = [args.tiles]
         # use tiledir  provided
         if args.tiles.startswith('s3://'):
-            allImageryDatasets = [S3SlippyMapTiles(args.tiles, mode='multibands', transform=None, aws_profile = args.aws_profile, ids = tile_ids_filter, buffered=args.buffer, buffered_overlap=args.buffer_overlap, tile_size=tile_size, bands=num_channels)]
+            allImageryDatasets = [S3SlippyMapTiles(args.tiles, mode='multibands', transform=None, aws_profile = args.aws_profile, ids = tile_ids_filter, buffered=args.buffer, buffered_overlap=args.buffer_overlap, tilesize=tile_size, bands=num_channels)]
         else:
             allImageryDatasets = [SlippyMapTiles(args.tiles, mode="multibands", transform = None)]
         # directory = BufferedSlippyMapDirectory(args.tiles, transform=transform, size=tile_size,re overlap=args.overlap)

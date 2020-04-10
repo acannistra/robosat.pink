@@ -114,16 +114,17 @@ class S3SlippyMapTiles(torch.utils.data.Dataset):
     """Dataset for images stored in slippy map format on AWS S3
     """
 
-    def __init__(self, root, mode, transform=None, aws_profile = 'default', ext=None):
+    def __init__(self, root, mode, transform=None, aws_profile = 'default', ext=None, buffered=False, buffered_overlap=64, tilesize=512, bands=4):
         super().__init__()
 
         self.tiles = []
         self.tileids = []
         self.transform = transform
         self.aws_profile = aws_profile
-
-
-        tiles_from_slippy_map_s3(root, aws_profile)
+        self.buffered = buffered
+        self.buffered_overlap = buffered_overlap
+        self.tilesize = tilesize
+        self.bands = bands
 
         _allids, _alltiles, _allpaths = list(zip(*tiles_from_slippy_map_s3(root, aws_profile)))
 
@@ -144,32 +145,48 @@ class S3SlippyMapTiles(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.tiles)
 
-    def __getitem__(self, i):
+    def __getitem__(self, i, ignore_buffer=False):
         id, tile, path = self.tiles[i]
 
-
         image = None
-        with rio.Env(profile_name=self.aws_profile):
 
-            if self.mode == "image":
-                image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
+        # if this is a buffered instance and ignore_buffer is set,
+        # or if this is a normal non-buffered instance, then we
+        # do the regular tile retreival.
+        if (self.buffered and ignore_buffer) or not self.buffered:
+            with rio.Env(profile_name=self.aws_profile):
 
-            elif self.mode == "multibands":
-                image = rio.open(path).read()
+                if self.mode == "image":
+                    image = cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB)
 
-            elif self.mode == "mask":
-                image = np.array(Image.open(path).convert("P"))
+                elif self.mode == "multibands":
+                    image = rio.open(path).read()
 
-            if self.transform is not None:
-                image = self.transform(image = image)['image']
+                elif self.mode == "mask":
+                    image = np.array(Image.open(path).convert("P"))
 
+                if self.transform is not None:
+                    image = self.transform(image = image)['image']
+
+        else:
+            if self.buffered:
+                image = buffer_tile_image(
+                    tile, self, self.buffered_overlap, self.tilesize,
+                    self.bands
+                )
 
         return tile, torch.FloatTensor(image)
 
 
     def get_tile_by_id(self, tileId):
         tileIndex = self.tileids[tileId]
-        return (self.__getitem__(tileIndex))
+        return (self.__getitem__(tileIndex, ignore_buffer=True))
+
+    def unbuffer(self, data):
+        o = self.buffered_overlap
+        _, x, y = data.shape
+
+        return data[:, o : x - o, o : y - o]
 
 
 

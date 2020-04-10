@@ -112,12 +112,12 @@ class PairedTiles(torch.utils.data.Dataset):
 # Single Slippy Map directory structure
 class S3SlippyMapTiles(torch.utils.data.Dataset):
     """Dataset for images stored in slippy map format on AWS S3
-    
+
         provide list of tiles to `ids` to only return a dataset with those tiles.
     """
 
 
-    def __init__(self, root, mode, transform=None, aws_profile = 'default', ext=None, buffered=False, buffered_overlap=64, tilesize=512, bands=4):
+    def __init__(self, root, mode, transform=None, aws_profile = 'default', ext=None, buffered=False, buffered_overlap=64, tilesize=512, bands=4, ids=None):
         super().__init__()
 
         self.tiles = []
@@ -140,6 +140,11 @@ class S3SlippyMapTiles(torch.utils.data.Dataset):
 
         if ext:
             keepTiles = [t for t in self.tiles if os.path.splitext(t[2])[1] == "."+ext]
+            self.tiles = keepTiles
+
+        if ids is not None:
+            keepTiles = [t for t in self.tiles if t[0] in ids]
+            self.tiles = keepTiles
 
         self.tiles.sort(key=lambda tile: tile[0])
         self.mode = mode

@@ -14,7 +14,9 @@ import cv2
 import numpy as np
 import rasterio as rio
 from mercantile import Tile
-
+from time import sleep
+RETRY_LENGTH_SECONDS = 5
+MAX_RETRY_ATTEMPTS = 10
 
 from robosat_pink.tiles import tiles_from_slippy_map, buffer_tile_image, tiles_from_slippy_map_s3
 """
@@ -294,11 +296,25 @@ class MultiSlippyMapTilesConcatenation(torch.utils.data.Dataset):
 
         match = self.overlap.iloc[i]
 
-        s = boto3.Session(profile_name = self.aws_profile)
+        s = boto3.Session(profile_name=self.aws_profile)
 
         with rio.Env(AWSSession(s)):
             mask = np.squeeze(rio.open(match.path_mask).read())
-            data = rio.open(match.path).read()
+
+            dataAcquired = False
+            attempts_remaining = MAX_RETRY_ATTEMPTS
+            while (not dataAcquired) and (attempts_remaining > 0):
+                try:
+                    data = rio.open(match.path).read()
+                    dataAcquired = True
+                except rio.errors.RasterioError as e:
+                    print(f"Rasterio Read Failure (retrying, {attempts_remaining} attempts remain). Path: {match.path}")
+                    attempts_remaining = attempts_remaining - 1
+                    sleep(RETRY_LENGTH_SECONDS)
+
+
+            if not dataAcquired:
+                raise Exception("Rasterio Read Failure, all attempts exhausted. (Path: {match.path}).")
 
 
         if self.joint_transform:
